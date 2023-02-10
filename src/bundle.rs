@@ -8,7 +8,8 @@ use indexmap::IndexMap;
 
 use crate::sprite_atlas::SpriteAtlasWrapper;
 use crate::{
-    Asset, AssetFile, MonoBehavior, Sprite, SpriteAtlas, TerrainData, TextAsset, Texture2D,
+    Asset, AssetFile, MessageMap, MonoBehavior, Sprite, SpriteAtlas, TerrainData, TextAsset,
+    Texture2D,
 };
 
 #[derive(Debug)]
@@ -114,7 +115,7 @@ impl Bundle {
 
         let meta_data = MetaData {
             guid: 0, // TODO: Do we need to fill this in for any file?
-            block_count: 1,
+            block_count: blocks.len() as u32,
             blocks,
             node_count: nodes.len() as u32,
             nodes,
@@ -152,7 +153,7 @@ impl Bundle {
         self.files.get(path)
     }
 
-    pub fn get_index(&mut self, path: &str) -> Option<&mut BundleFile> {
+    pub fn get_mut(&mut self, path: &str) -> Option<&mut BundleFile> {
         self.files.get_mut(path)
     }
 
@@ -254,11 +255,10 @@ impl TextBundle {
     }
 
     pub fn take_string(&mut self) -> Result<String> {
-        self.get_asset()
-            .map(|text| {
-                let (text, _) = UTF_8.decode_with_bom_removal(&text.data);
-                text.to_string()
-            })
+        self.get_asset().map(|text| {
+            let (text, _) = UTF_8.decode_with_bom_removal(&text.data);
+            text.to_string()
+        })
     }
 
     pub fn replace_raw(&mut self, new_data: Vec<u8>) -> Result<()> {
@@ -392,5 +392,48 @@ fn extract_atlas_assets(asset_file: AssetFile) -> Result<(Texture2D, SpriteAtlas
         Ok((texture, atlas, sprites))
     } else {
         bail!("could not extract assets required to build sprite atlas")
+    }
+}
+
+#[derive(Debug)]
+pub struct MessageBundle(TextBundle, MessageMap);
+
+impl MessageBundle {
+    pub fn load<T: AsRef<Path>>(path: T) -> Result<Self> {
+        Self::from_slice(&std::fs::read(path)?)
+    }
+
+    pub fn from_slice(raw_bundle: &[u8]) -> Result<Self> {
+        let mut text_bundle = TextBundle::from_slice(raw_bundle)?;
+        let raw_msbt = text_bundle.take_raw()?;
+        Ok(Self(text_bundle, MessageMap::from_slice(&raw_msbt)?))
+    }
+
+    pub fn save<T: AsRef<Path>>(&mut self, path: T) -> Result<()> {
+        let raw_msbt = self.1.serialize()?;
+        self.0.replace_raw(raw_msbt)?;
+        self.0.save(path)
+    }
+
+    pub fn serialize(&mut self) -> Result<Vec<u8>> {
+        let raw_msbt = self.1.serialize()?;
+        self.0.replace_raw(raw_msbt)?;
+        self.0.serialize()
+    }
+
+    pub fn take_data(&mut self) -> IndexMap<String, String> {
+        std::mem::take(&mut self.1.messages)
+    }
+
+    pub fn replace_data(&mut self, new_data: IndexMap<String, String>) {
+        self.1.messages = new_data;
+    }
+
+    pub fn clear_entries(&mut self) {
+        self.1.messages.clear();
+    }
+
+    pub fn insert_entry(&mut self, key: String, value: String) {
+        self.1.messages.insert(key, value);
     }
 }

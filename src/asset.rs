@@ -70,7 +70,7 @@ pub struct AssetFile {
     ref_type_count: u32,
     user_info: NullString,
 
-    #[br(parse_with = |reader, options, _: ()| read_assets(reader, options, (&types, &objects, header.data_offset)))]
+    #[br(parse_with = |reader, options, _: ()| read_assets(reader, options, &types, &objects, header.data_offset))]
     pub assets: Vec<Asset>,
 }
 
@@ -180,14 +180,16 @@ impl WriteEndian for AssetFile {
 fn read_assets<R: Read + Seek>(
     reader: &mut R,
     options: &ReadOptions,
-    args: (&[AssetFileType], &[AssetFileObject], u64),
+    types: &[AssetFileType],
+    objects: &[AssetFileObject], 
+    data_offset: u64,
 ) -> BinResult<Vec<Asset>> {
     let mut assets = vec![];
-    let mut sorted_objects = args.1.iter().collect_vec();
+    let mut sorted_objects = objects.iter().collect_vec();
     sorted_objects.sort_by(|a, b| a.offset.cmp(&b.offset));
     for obj in sorted_objects {
-        let ty = &args.0[obj.type_id as usize]; // TODO: Bounds check.
-        reader.seek(SeekFrom::Start(args.2 + obj.offset))?;
+        let ty = &types[obj.type_id as usize]; // TODO: Bounds check.
+        reader.seek(SeekFrom::Start(data_offset + obj.offset))?;
         assets.push(Asset::read_options(reader, options, ty.type_hash)?);
     }
     Ok(assets)
@@ -548,25 +550,14 @@ where
     }
 }
 
-impl<T> Clone for UArray<T>
-where
-    T: BinRead<Args = ()> + BinWrite<Args = ()> + std::fmt::Debug + Clone,
-{
-    fn clone(&self) -> Self {
-        Self {
-            items: self.items.clone(),
-        }
-    }
-}
-
 impl<T> Deref for UArray<T>
 where
     T: BinRead<Args = ()> + BinWrite<Args = ()> + std::fmt::Debug,
 {
-    type Target = [T];
+    type Target = Vec<T>;
 
     fn deref(&self) -> &Self::Target {
-        self.items.as_slice()
+        &self.items
     }
 }
 
@@ -579,7 +570,7 @@ where
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct UString(pub String);
 
 impl std::fmt::Debug for UString {
@@ -595,16 +586,16 @@ impl std::fmt::Display for UString {
 }
 
 impl Deref for UString {
-    type Target = str;
+    type Target = String;
 
     fn deref(&self) -> &Self::Target {
-        self.0.as_str()
+        &self.0
     }
 }
 
 impl DerefMut for UString {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.0.as_mut_str()
+        &mut self.0
     }
 }
 
@@ -662,8 +653,9 @@ pub struct AssetBundle {
 }
 
 #[binrw]
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct PPtr {
+    #[brw(align_before = 4)]
     pub file_id: i32,
     pub path_id: i64,
 }
@@ -757,21 +749,6 @@ where
             script: Default::default(),
             name: Default::default(),
             data: Default::default(),
-        }
-    }
-}
-
-impl<T> Clone for MonoBehavior<T>
-where
-    T: BinRead<Args = ()> + BinWrite<Args = ()> + std::fmt::Debug + Clone,
-{
-    fn clone(&self) -> Self {
-        Self {
-            game_object: self.game_object.clone(),
-            enabled: self.enabled.clone(),
-            script: self.script.clone(),
-            name: self.name.clone(),
-            data: self.data.clone(),
         }
     }
 }
@@ -1393,6 +1370,7 @@ pub struct Material {
     pub name: UString,
     pub shader: PPtr,
     pub shader_keywords: UString,
+    #[brw(align_before = 4)]
     pub lightmap_flags: u32,
     pub enable_instancing_variants: u8,
     pub double_sided_gi: u8,

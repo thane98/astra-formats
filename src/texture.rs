@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail, Result};
 use astc_decode::Footprint;
-use image::{DynamicImage, RgbaImage, GrayImage};
+use image::{DynamicImage, GrayImage, RgbaImage};
 use tegra_swizzle::BlockHeight;
 
 use crate::{Texture2D, TextureFormat};
@@ -44,13 +44,9 @@ pub(crate) fn decode(texture: &Texture2D, image_data: &[u8]) -> Result<DynamicIm
                 .map(DynamicImage::ImageRgba8)
         }
         // This technically isn't correct, but the alternative is storing in a *much* larger texture.
-        TextureFormat::R8 => GrayImage::from_raw(
-            width as u32,
-            height as u32,
-            input,
-        )
-        .ok_or_else(|| anyhow!("failed to build image"))
-        .map(DynamicImage::ImageLuma8),
+        TextureFormat::R8 => GrayImage::from_raw(width as u32, height as u32, input)
+            .ok_or_else(|| anyhow!("failed to build image"))
+            .map(DynamicImage::ImageLuma8),
         _ => bail!("unsupported texture format '{:?}'", texture.texture_format),
     }
 }
