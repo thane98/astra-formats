@@ -22,7 +22,7 @@ pub(crate) fn decode(texture: &Texture2D, image_data: &[u8]) -> Result<DynamicIm
         tegra_swizzle::div_round_up(width, block_width),
         tegra_swizzle::div_round_up(height, block_height),
         1,
-        &image_data,
+        image_data,
         BlockHeight::Sixteen,
         bytes_per_pixel,
     )?;

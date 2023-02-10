@@ -316,7 +316,7 @@ impl TerrainBundle {
     }
 
     pub fn take_data(&mut self) -> Result<MonoBehavior<TerrainData>> {
-        self.get_asset().map(|asset| std::mem::take(asset))
+        self.get_asset().map(std::mem::take)
     }
 
     pub fn replace_data(&mut self, data: MonoBehavior<TerrainData>) -> Result<()> {

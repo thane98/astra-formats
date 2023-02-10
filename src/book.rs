@@ -20,7 +20,7 @@ impl Book {
     }
 
     pub fn from_str(contents: &str) -> Result<Self> {
-        let book: Self = quick_xml::de::from_str(&contents)?;
+        let book: Self = quick_xml::de::from_str(contents)?;
         Ok(book)
     }
 

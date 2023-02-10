@@ -12,7 +12,7 @@ thread_local!(static ERROR_MESSAGE: RefCell<Option<String>> = RefCell::new(None)
 #[no_mangle]
 pub unsafe extern "C" fn text_bundle_open(path: *const i8) -> FfiResult<Box<TextBundle>> {
     let path = CStr::from_ptr(path).to_string_lossy().to_string();
-    TextBundle::load(path).map(|bundle| Box::new(bundle)).into()
+    TextBundle::load(path).map(Box::new).into()
 }
 
 #[no_mangle]
@@ -21,8 +21,8 @@ pub unsafe extern "C" fn text_bundle_parse(
     len: usize,
 ) -> FfiResult<Box<TextBundle>> {
     let slice = std::slice::from_raw_parts(data, len);
-    TextBundle::from_slice(&slice)
-        .map(|bundle| Box::new(bundle))
+    TextBundle::from_slice(slice)
+        .map(Box::new)
         .into()
 }
 
@@ -79,7 +79,7 @@ pub unsafe extern "C" fn sprite_atlas_open(path: *const i8) -> FfiResult<Box<Spr
     let path = CStr::from_ptr(path).to_string_lossy().to_string();
     AtlasBundle::load(path)
         .and_then(|bundle| bundle.extract_data())
-        .map(|atlas| Box::new(atlas))
+        .map(Box::new)
         .into()
 }
 
@@ -99,7 +99,7 @@ pub unsafe extern "C" fn sprite_atlas_free(_: Box<SpriteAtlasWrapper>) {}
 pub unsafe extern "C" fn message_bundle_open(path: *const i8) -> FfiResult<Box<MessageBundle>> {
     let path = CStr::from_ptr(path).to_string_lossy().to_string();
     MessageBundle::load(path)
-        .map(|bundle| Box::new(bundle))
+        .map(Box::new)
         .into()
 }
 
@@ -110,7 +110,7 @@ pub unsafe extern "C" fn message_bundle_parse(
 ) -> FfiResult<Box<MessageBundle>> {
     let slice = std::slice::from_raw_parts(data, len);
     MessageBundle::from_slice(slice)
-        .map(|bundle| Box::new(bundle))
+        .map(Box::new)
         .into()
 }
 
