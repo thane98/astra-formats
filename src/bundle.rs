@@ -1,10 +1,11 @@
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Read, Write, BufReader};
 use std::path::Path;
 
 use anyhow::{anyhow, bail, Result};
 use binrw::{binrw, BinRead, BinWrite, NullString};
 use encoding_rs::UTF_8;
 use indexmap::IndexMap;
+use lzma_rs::decompress::UnpackedSize;
 
 use crate::sprite_atlas::SpriteAtlasWrapper;
 use crate::{
@@ -29,8 +30,18 @@ impl Bundle {
         cursor.read_exact(&mut buffer)?;
         let decompressed_data = match header.flags & 0x3F {
             0 => buffer,
+            1 => {
+                let mut reader = BufReader::new(buffer.as_slice());
+                let mut output_buffer: Vec<u8> = vec![];
+                let options = lzma_rs::decompress::Options {
+                    unpacked_size: UnpackedSize::UseProvided(Some(header.decompressed_size as u64)),
+                    ..Default::default()
+                };
+                lzma_rs::lzma_decompress_with_options(&mut reader, &mut output_buffer, &options)?;
+                output_buffer
+            }
             2 | 3 => lz4_flex::decompress(&buffer, header.decompressed_size as usize)?,
-            _ => bail!("unsupported compression type"),
+            _ => bail!("unsupported compression type '{}'", header.flags & 0x3F),
         };
 
         let mut meta_data_cursor = Cursor::new(&decompressed_data);
@@ -42,13 +53,23 @@ impl Bundle {
             cursor.read_exact(&mut buffer)?;
             match block.flags & 0x3F {
                 0 => blob.extend(buffer),
+                1 => {
+                    let mut reader = BufReader::new(buffer.as_slice());
+                    let mut output_buffer: Vec<u8> = vec![];
+                    let options = lzma_rs::decompress::Options {
+                        unpacked_size: UnpackedSize::UseProvided(Some(block.decompressed_size as u64)),
+                        ..Default::default()
+                    };
+                    lzma_rs::lzma_decompress_with_options(&mut reader, &mut output_buffer, &options)?;
+                    blob.extend(output_buffer);
+                }
                 2 | 3 => {
                     blob.extend(lz4_flex::decompress(
                         &buffer,
                         block.decompressed_size as usize,
                     )?);
                 }
-                _ => bail!("unsupported compression type"),
+                _ => bail!("unsupported compression type '{}'", block.flags & 0x3F),
             };
         }
 
