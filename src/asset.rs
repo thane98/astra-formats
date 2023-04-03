@@ -40,7 +40,7 @@ fn write_padding<W: Write + Seek>(writer: &mut W, align: u64) -> BinResult<()> {
 #[derive(Debug)]
 #[br(little, assert(ref_type_count == 0))]
 pub struct AssetFile {
-    #[br(big, temp)]
+    #[brw(big)]
     header: AssetFileHeader,
 
     #[br(temp)]
@@ -85,7 +85,7 @@ impl BinWrite for AssetFile {
     ) -> BinResult<()> {
         // Reserve space for the header. Don't know enough to build it yet.
         let base_position = writer.stream_position()?;
-        for _ in 0..0x3B {
+        for _ in 0..(0x36 + self.header.unity_version.len()) {
             writer.write_u8(0)?;
         }
 
@@ -150,22 +150,17 @@ impl BinWrite for AssetFile {
         // Fill in the header and object table.
         let end_position = writer.stream_position()?;
         writer.seek(SeekFrom::Start(base_position))?;
-        AssetFileHeader {
-            junk: 0,
-            version: 22,
-            junk2: 0,
-            // While the unity version, platform, etc. are part of the header conceptually,
-            // they are actually part of the meta data for size calculations.
-            // TODO: Create a meta data type that holds all of this instead.
-            meta_data_size: (meta_data_size + 0xB) as u32,
-            file_size: end_position - base_position,
-            data_offset,
-            junk3: 0,
-            unity_version: vec![48, 46, 48, 46, 48, 0],
-            platform: 38,
-            enable_type_tree: 1, // TODO: Are there exceptions to this?
-        }
-        .write_be(writer)?;
+        let mut header = self.header.clone();
+        header.version = 22;
+        // While the unity version, platform, etc. are part of the header conceptually,
+        // they are actually part of the meta data for size calculations.
+        // TODO: Create a meta data type that holds all of this instead.
+        header.meta_data_size = (meta_data_size + header.unity_version.len() as u64 + 6) as u32;
+        header.file_size = end_position - base_position;
+        header.data_offset = data_offset;
+        header.platform = 38;
+        header.enable_type_tree = 1;
+        header.write_be(writer)?;
         writer.seek(SeekFrom::Start(objects_position))?;
         objects.write_options(writer, options, ())?;
         writer.seek(SeekFrom::Start(end_position))?;
@@ -208,7 +203,7 @@ fn calculate_object_order(objects: &[AssetFileObject]) -> Vec<usize> {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct AssetFileHeader {
     pub junk: u64,
     pub version: u32,
@@ -217,8 +212,7 @@ pub struct AssetFileHeader {
     pub file_size: u64,
     pub data_offset: u64,
     pub junk3: u64,
-    #[br(count = 6)]
-    pub unity_version: Vec<u8>,
+    pub unity_version: NullString,
     #[brw(little)]
     pub platform: u32,
     pub enable_type_tree: u8,
