@@ -100,39 +100,41 @@ impl Bundle {
     }
 
     pub fn serialize(&self) -> Result<Vec<u8>> {
+        // Combine files into a single buffer and build node data.
         let mut nodes = vec![];
-        let mut blocks = vec![];
-        let mut compressed_blob = vec![];
-        let mut uncompressed_blob_size = 0;
+        let mut uncompressed_blob = vec![];
         for (key, file) in &self.files {
-            // Serialize the file.
-            let mut buffer = vec![];
+            let base_size = uncompressed_blob.len() as u64;
             match file {
-                BundleFile::Raw(raw_file) => buffer.extend_from_slice(raw_file),
+                BundleFile::Raw(raw_file) => uncompressed_blob.extend_from_slice(raw_file),
                 BundleFile::Assets(assets_file) => {
-                    assets_file.write_le(&mut Cursor::new(&mut buffer))?
+                    let mut cursor = Cursor::new(&mut uncompressed_blob);
+                    cursor.set_position(base_size);
+                    assets_file.write_le(&mut cursor)?
                 }
             }
             nodes.push(Node {
-                offset: uncompressed_blob_size as u64,
-                size: buffer.len() as u64,
+                offset: base_size,
+                size: (uncompressed_blob.len() as u64 - base_size),
                 file_type: file.into(),
                 path: NullString::from(key.clone()),
             });
-            uncompressed_blob_size += buffer.len();
-
-            // Chunk the buffer and compress as LZ4.
-            for chunk_start in (0..buffer.len()).step_by(0x20000) {
-                let chunk_end = (chunk_start + 0x20000).min(buffer.len());
-                let chunk_buffer = lz4_flex::compress(&buffer[chunk_start..chunk_end]);
-                blocks.push(Block {
-                    decompressed_size: (chunk_end - chunk_start) as u32,
-                    compressed_size: chunk_buffer.len() as u32,
-                    flags: 0x3,
-                });
-                compressed_blob.extend(chunk_buffer);
-            }
         }
+        
+        // Chunk the buffer and compress as LZ4.
+        let mut compressed_blob = vec![];
+        let mut blocks = vec![];
+        for chunk_start in (0..uncompressed_blob.len()).step_by(0x20000) {
+            let chunk_end = (chunk_start + 0x20000).min(uncompressed_blob.len());
+            let chunk_buffer = lz4_flex::compress(&uncompressed_blob[chunk_start..chunk_end]);
+            blocks.push(Block {
+                decompressed_size: (chunk_end - chunk_start) as u32,
+                compressed_size: chunk_buffer.len() as u32,
+                flags: 0x3,
+            });
+            compressed_blob.extend(chunk_buffer);
+        }
+        uncompressed_blob.clear(); // Large buffer. Clear to reduce memory pressure.
 
         let meta_data = MetaData {
             guid: 0, // TODO: Do we need to fill this in for any file?
