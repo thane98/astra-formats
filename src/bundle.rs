@@ -178,6 +178,23 @@ impl Bundle {
         self.files.get_mut(path)
     }
 
+    pub fn rename(&mut self, original_file_name: &str, new_file_name: String) -> Result<()> {
+        if let Some(contents) = self.files.remove(original_file_name) {
+            self.files.insert(new_file_name, contents);
+            Ok(())
+        } else {
+            bail!("bundle does not contain file '{}'", original_file_name)
+        }
+    }
+
+    pub fn rename_cab(&mut self, new_file_name: String) -> Result<()> {
+        if let Some(cab) = self.get_cab().map(|c| c.to_string()) {
+            self.rename(&cab, new_file_name)
+        } else {
+            bail!("could not identify cab file")
+        }
+    }
+
     pub fn files(&self) -> impl Iterator<Item = (&String, &BundleFile)> {
         self.files.iter()
     }
@@ -270,6 +287,14 @@ impl TextBundle {
         self.0.serialize()
     }
 
+    pub fn rename(&mut self, original_file_name: &str, new_file_name: String) -> Result<()> {
+        self.0.rename(original_file_name, new_file_name)
+    }
+
+    pub fn rename_cab(&mut self, new_file_name: String) -> Result<()> {
+        self.0.rename_cab(new_file_name)
+    }
+
     pub fn take_raw(&mut self) -> Result<Vec<u8>> {
         self.get_asset()
             .map(|text| std::mem::take(&mut text.data.items))
@@ -277,7 +302,8 @@ impl TextBundle {
 
     pub fn take_string(&mut self) -> Result<String> {
         self.get_asset().map(|text| {
-            let (text, _) = UTF_8.decode_with_bom_removal(&text.data);
+            let data = std::mem::take(&mut text.data);
+            let (text, _) = UTF_8.decode_with_bom_removal(&data);
             text.to_string()
         })
     }
@@ -334,6 +360,14 @@ impl TerrainBundle {
 
     pub fn serialize(&self) -> Result<Vec<u8>> {
         self.0.serialize()
+    }
+
+    pub fn rename(&mut self, original_file_name: &str, new_file_name: String) -> Result<()> {
+        self.0.rename(original_file_name, new_file_name)
+    }
+
+    pub fn rename_cab(&mut self, new_file_name: String) -> Result<()> {
+        self.0.rename_cab(new_file_name)
     }
 
     pub fn take_data(&mut self) -> Result<MonoBehavior<TerrainData>> {
@@ -440,6 +474,14 @@ impl MessageBundle {
         let raw_msbt = self.1.serialize()?;
         self.0.replace_raw(raw_msbt)?;
         self.0.serialize()
+    }
+
+    pub fn rename(&mut self, original_file_name: &str, new_file_name: String) -> Result<()> {
+        self.0.rename(original_file_name, new_file_name)
+    }
+
+    pub fn rename_cab(&mut self, new_file_name: String) -> Result<()> {
+        self.0.rename_cab(new_file_name)
     }
 
     pub fn take_data(&mut self) -> IndexMap<String, String> {

@@ -564,7 +564,7 @@ where
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct UString(pub String);
 
 impl std::fmt::Debug for UString {
@@ -805,7 +805,7 @@ pub struct Texture2D {
     pub color_space: i32,
     pub platform_blob: UArray<u8>,
     pub image_data: UArray<u8>,
-    pub streaming_info: StreamingInfo,
+    pub stream_data: StreamingInfo,
 }
 
 #[binrw]
