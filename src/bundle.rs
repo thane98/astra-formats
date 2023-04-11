@@ -1,10 +1,11 @@
-use std::io::{Cursor, Read, Write, BufReader};
+use std::io::{BufReader, Cursor, Read, Seek, Write};
 use std::path::Path;
 
 use anyhow::{anyhow, bail, Result};
 use binrw::{binrw, BinRead, BinWrite, NullString};
 use encoding_rs::UTF_8;
 use indexmap::IndexMap;
+use itertools::Itertools;
 use lzma_rs::decompress::UnpackedSize;
 
 use crate::sprite_atlas::SpriteAtlasWrapper;
@@ -23,29 +24,21 @@ impl Bundle {
         Self::from_slice(&std::fs::read(path)?)
     }
 
+    pub fn list_files<T>(input: &mut T) -> Result<Vec<String>>
+    where
+        T: Read + Seek,
+    {
+        let meta_data = Self::read_header_and_meta_data(input)?;
+        Ok(meta_data
+            .nodes
+            .into_iter()
+            .map(|node| node.path.to_string())
+            .collect_vec())
+    }
+
     pub fn from_slice(raw_bundle: &[u8]) -> Result<Self> {
         let mut cursor = Cursor::new(raw_bundle);
-        let header = Header::read_be(&mut cursor)?;
-        let mut buffer = vec![0; header.compressed_size as usize];
-        cursor.read_exact(&mut buffer)?;
-        let decompressed_data = match header.flags & 0x3F {
-            0 => buffer,
-            1 => {
-                let mut reader = BufReader::new(buffer.as_slice());
-                let mut output_buffer: Vec<u8> = vec![];
-                let options = lzma_rs::decompress::Options {
-                    unpacked_size: UnpackedSize::UseProvided(Some(header.decompressed_size as u64)),
-                    ..Default::default()
-                };
-                lzma_rs::lzma_decompress_with_options(&mut reader, &mut output_buffer, &options)?;
-                output_buffer
-            }
-            2 | 3 => lz4_flex::decompress(&buffer, header.decompressed_size as usize)?,
-            _ => bail!("unsupported compression type '{}'", header.flags & 0x3F),
-        };
-
-        let mut meta_data_cursor = Cursor::new(&decompressed_data);
-        let meta_data = MetaData::read_be(&mut meta_data_cursor)?;
+        let meta_data = Self::read_header_and_meta_data(&mut cursor)?;
 
         let mut blob = vec![];
         for block in &meta_data.blocks {
@@ -57,10 +50,16 @@ impl Bundle {
                     let mut reader = BufReader::new(buffer.as_slice());
                     let mut output_buffer: Vec<u8> = vec![];
                     let options = lzma_rs::decompress::Options {
-                        unpacked_size: UnpackedSize::UseProvided(Some(block.decompressed_size as u64)),
+                        unpacked_size: UnpackedSize::UseProvided(Some(
+                            block.decompressed_size as u64,
+                        )),
                         ..Default::default()
                     };
-                    lzma_rs::lzma_decompress_with_options(&mut reader, &mut output_buffer, &options)?;
+                    lzma_rs::lzma_decompress_with_options(
+                        &mut reader,
+                        &mut output_buffer,
+                        &options,
+                    )?;
                     blob.extend(output_buffer);
                 }
                 2 | 3 => {
@@ -94,6 +93,34 @@ impl Bundle {
         Ok(Self { files })
     }
 
+    fn read_header_and_meta_data<T>(reader: &mut T) -> Result<MetaData>
+    where
+        T: Read + Seek,
+    {
+        let header = Header::read_be(reader)?;
+        let mut buffer = vec![0; header.compressed_size as usize];
+        reader.read_exact(&mut buffer)?;
+        let decompressed_data = match header.flags & 0x3F {
+            0 => buffer,
+            1 => {
+                let mut reader = BufReader::new(buffer.as_slice());
+                let mut output_buffer: Vec<u8> = vec![];
+                let options = lzma_rs::decompress::Options {
+                    unpacked_size: UnpackedSize::UseProvided(Some(header.decompressed_size as u64)),
+                    ..Default::default()
+                };
+                lzma_rs::lzma_decompress_with_options(&mut reader, &mut output_buffer, &options)?;
+                output_buffer
+            }
+            2 | 3 => lz4_flex::decompress(&buffer, header.decompressed_size as usize)?,
+            _ => bail!("unsupported compression type '{}'", header.flags & 0x3F),
+        };
+
+        let mut meta_data_cursor = Cursor::new(&decompressed_data);
+        let meta_data = MetaData::read_be(&mut meta_data_cursor)?;
+        Ok(meta_data)
+    }
+
     pub fn save<T: AsRef<Path>>(&self, path: T) -> Result<()> {
         std::fs::write(path, self.serialize()?)?;
         Ok(())
@@ -120,7 +147,7 @@ impl Bundle {
                 path: NullString::from(key.clone()),
             });
         }
-        
+
         // Chunk the buffer and compress as LZ4.
         let mut compressed_blob = vec![];
         let mut blocks = vec![];
