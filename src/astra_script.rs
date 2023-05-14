@@ -26,7 +26,7 @@ pub enum ParseError {
 }
 
 impl ParseError {
-    pub fn report<W: Write>(&self, source_script: &str) {
+    pub fn report(&self, source_script: &str) {
         let mut writer = StandardStream::stderr(ColorChoice::Always);
         let config = codespan_reporting::term::Config::default();
         let mut files = SimpleFiles::new();
