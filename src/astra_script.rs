@@ -485,3 +485,8 @@ pub fn parse_astra_script(source: &str) -> Result<IndexMap<String, Vec<MsbtToken
         Err(ParseError::Aggregated(errors))
     }
 }
+
+pub fn pack_astra_script(source: &str) -> Result<IndexMap<String, Vec<u16>>> {
+    let entries = parse_astra_script(source)?;
+    Ok(crate::pack_msbt_entries(&entries))
+}

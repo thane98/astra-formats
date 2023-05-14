@@ -24,4 +24,4 @@ pub use sprite_atlas::SpriteAtlasWrapper;
 #[cfg(feature = "msbt_script")]
 pub use msbt_script::{MsbtToken, parse_msbt_script, pack_msbt_entries, pack_msbt_entry};
 #[cfg(feature = "msbt_script")]
-pub use astra_script::{ParseError, parse_astra_script};
+pub use astra_script::{ParseError, parse_astra_script, pack_astra_script};
