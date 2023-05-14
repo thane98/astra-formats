@@ -513,19 +513,26 @@ impl MessageBundle {
         self.0.rename_cab(new_file_name)
     }
 
-    pub fn take_data(&mut self) -> IndexMap<String, String> {
+    pub fn take_msbt(&mut self) -> IndexMap<String, Vec<u16>> {
         std::mem::take(&mut self.1.messages)
     }
 
-    pub fn replace_data(&mut self, new_data: IndexMap<String, String>) {
+    pub fn take_text(&mut self) -> Result<IndexMap<String, String>> {
+        let mut out = IndexMap::new();
+        for (k, v) in self.take_msbt() {
+            out.insert(k, String::from_utf16(&v)?);
+        }
+        Ok(out)
+    }
+
+    pub fn replace_msbt(&mut self, new_data: IndexMap<String, Vec<u16>>) {
         self.1.messages = new_data;
     }
 
-    pub fn clear_entries(&mut self) {
-        self.1.messages.clear();
-    }
-
-    pub fn insert_entry(&mut self, key: String, value: String) {
-        self.1.messages.insert(key, value);
+    pub fn replace_text(&mut self, new_data: IndexMap<String, String>) {
+        self.1.messages = new_data
+            .into_iter()
+            .map(|(k, v)| (k, v.encode_utf16().collect()))
+            .collect();
     }
 }

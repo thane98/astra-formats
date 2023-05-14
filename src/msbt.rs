@@ -12,7 +12,7 @@ fn align(operand: u64, alignment: u64) -> u64 {
 #[derive(Debug, Default)]
 pub struct MessageMap {
     pub num_buckets: usize,
-    pub messages: IndexMap<String, String>,
+    pub messages: IndexMap<String, Vec<u16>>,
 }
 
 impl MessageMap {
@@ -51,10 +51,13 @@ impl MessageMap {
         })
     }
 
-    pub fn save<T: AsRef<Path>>(&self, path: T) -> Result<()> {
-        let contents = self.serialize()?;
-        std::fs::write(path, contents)?;
-        Ok(())
+    pub fn save<T: AsRef<Path>>(&mut self, path: T) -> Result<()> {
+        if self.num_buckets == 0 {
+            self.rehash_and_save(path)
+        } else {
+            std::fs::write(path, self.serialize()?)?;
+            Ok(())
+        }
     }
 
     pub fn rehash_and_save<T: AsRef<Path>>(&mut self, path: T) -> Result<()> {
@@ -63,8 +66,12 @@ impl MessageMap {
         Ok(())
     }
 
-    pub fn serialize(&self) -> Result<Vec<u8>> {
-        self.serialize_with_bucket_count(self.num_buckets)
+    pub fn serialize(&mut self) -> Result<Vec<u8>> {
+        if self.num_buckets == 0 {
+            self.rehash_and_serialize()
+        } else {
+            self.serialize_with_bucket_count(self.num_buckets)
+        }
     }
 
     pub fn rehash_and_serialize(&mut self) -> Result<Vec<u8>> {
@@ -96,21 +103,6 @@ impl MessageMap {
         cursor.write_all(&atr1)?;
         cursor.write_all(&txt2)?;
         Ok(buffer)
-    }
-}
-
-impl From<MessageMap> for IndexMap<String, String> {
-    fn from(value: MessageMap) -> Self {
-        value.messages
-    }
-}
-
-impl From<IndexMap<String, String>> for MessageMap {
-    fn from(value: IndexMap<String, String>) -> Self {
-        Self {
-            num_buckets: value.len() / 2 + 1,
-            messages: value,
-        }
     }
 }
 
@@ -176,7 +168,7 @@ fn parse_atr1(cursor: &mut Cursor<&[u8]>) -> Result<Vec<u8>> {
     Ok(buffer)
 }
 
-fn parse_txt2(cursor: &mut Cursor<&[u8]>) -> Result<Vec<String>> {
+fn parse_txt2(cursor: &mut Cursor<&[u8]>) -> Result<Vec<Vec<u16>>> {
     let magic = read_utf8(4, cursor)?;
     if magic != "TXT2" {
         bail!("expected magic number 'TXT2', found '{}'", magic);
@@ -202,8 +194,7 @@ fn parse_txt2(cursor: &mut Cursor<&[u8]>) -> Result<Vec<String>> {
         while cursor.position() < end {
             buffer.push(cursor.read_u16::<LittleEndian>()?);
         }
-        let value = String::from_utf16(&buffer)?;
-        entries.push(value);
+        entries.push(buffer);
     }
     Ok(entries)
 }
@@ -217,7 +208,7 @@ fn write_utf8(cursor: &mut Cursor<&mut [u8]>, value: &str) -> Result<()> {
     Ok(())
 }
 
-fn serialize_lbl1(messages: &IndexMap<String, String>, num_buckets: usize) -> Result<Vec<u8>> {
+fn serialize_lbl1(messages: &IndexMap<String, Vec<u16>>, num_buckets: usize) -> Result<Vec<u8>> {
     // Bucketize labels.
     let mut buckets: Vec<Vec<(String, u32)>> = vec![vec![]; num_buckets];
     for (i, label) in messages.keys().enumerate() {
@@ -294,17 +285,13 @@ fn serialize_atr1(count: usize) -> Result<Vec<u8>> {
     Ok(buffer)
 }
 
-fn serialize_txt2(messages: &IndexMap<String, String>) -> Result<Vec<u8>> {
+fn serialize_txt2(messages: &IndexMap<String, Vec<u16>>) -> Result<Vec<u8>> {
     let mut raw_text: Vec<u8> = vec![];
     let mut text_offsets = vec![];
     let base_position = messages.len() * 4 + 4;
     for message in messages.values() {
-        let mut buffer: Vec<u16> = message.encode_utf16().collect();
-        if buffer.last().copied().unwrap_or_default() != 0 {
-            buffer.push(0);
-        }
         text_offsets.push(base_position + raw_text.len());
-        raw_text.extend(buffer.into_iter().flat_map(|b| b.to_le_bytes().into_iter()));
+        raw_text.extend(message.into_iter().flat_map(|b| b.to_le_bytes().into_iter()));
     }
 
     let length_without_header = messages.len() * 4 + raw_text.len() + 4;

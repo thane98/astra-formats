@@ -5,7 +5,7 @@ use anyhow::Result;
 use image::DynamicImage;
 use indexmap::IndexMap;
 
-use crate::{AtlasBundle, MessageBundle, SpriteAtlasWrapper, TextBundle};
+use crate::{AtlasBundle, SpriteAtlasWrapper, TextBundle};
 
 thread_local!(static ERROR_MESSAGE: RefCell<Option<String>> = RefCell::new(None));
 
@@ -94,94 +94,6 @@ pub unsafe extern "C" fn sprite_atlas_get_sprite(
 
 #[no_mangle]
 pub unsafe extern "C" fn sprite_atlas_free(_: Box<SpriteAtlasWrapper>) {}
-
-#[no_mangle]
-pub unsafe extern "C" fn message_bundle_open(path: *const i8) -> FfiResult<Box<MessageBundle>> {
-    let path = CStr::from_ptr(path).to_string_lossy().to_string();
-    MessageBundle::load(path)
-        .map(Box::new)
-        .into()
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn message_bundle_parse(
-    data: *const u8,
-    len: usize,
-) -> FfiResult<Box<MessageBundle>> {
-    let slice = std::slice::from_raw_parts(data, len);
-    MessageBundle::from_slice(slice)
-        .map(Box::new)
-        .into()
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn message_bundle_save(
-    bundle: &mut MessageBundle,
-    path: *const i8,
-) -> FfiResult<()> {
-    let path = CStr::from_ptr(path).to_string_lossy().to_string();
-    bundle.save(path).into()
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn message_bundle_serialize(
-    bundle: &mut MessageBundle,
-) -> FfiResult<FfiVec<u8>> {
-    bundle.serialize().map(|v| v.into()).into()
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn message_bundle_take_data(
-    bundle: &mut MessageBundle,
-) -> FfiVec<KeyValuePair> {
-    bundle.take_data().into()
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn message_bundle_put_data(
-    bundle: &mut MessageBundle,
-    data: *const KeyValuePair,
-    len: usize,
-) {
-    let mut map = IndexMap::new();
-    for pair in std::slice::from_raw_parts(data, len) {
-        map.insert((&pair.key).into(), (&pair.value).into());
-    }
-    bundle.replace_data(map);
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn message_bundle_clear(bundle: &mut MessageBundle) {
-    bundle.clear_entries();
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn message_bundle_insert_entry(
-    bundle: &mut MessageBundle,
-    key_data: *const u8,
-    key_len: usize,
-    value_data: *const u8,
-    value_len: usize,
-) {
-    let raw_key = std::slice::from_raw_parts(key_data, key_len);
-    let raw_value = std::slice::from_raw_parts(value_data, value_len);
-    bundle.insert_entry(
-        String::from_utf8_lossy(raw_key).to_string(),
-        String::from_utf8_lossy(raw_value).to_string(),
-    )
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn message_bundle_free(_: Box<MessageBundle>) {}
-
-#[no_mangle]
-pub unsafe extern "C" fn message_bundle_free_data(data: FfiVec<KeyValuePair>) {
-    let pairs = Box::from_raw(std::slice::from_raw_parts_mut(data.data, data.len));
-    for pair in &*pairs {
-        let _ = Box::from_raw(pair.key.data);
-        let _ = Box::from_raw(pair.value.data);
-    }
-}
 
 #[no_mangle]
 pub unsafe extern "C" fn astra_get_error_message() -> *mut i8 {
