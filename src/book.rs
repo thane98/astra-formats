@@ -1,7 +1,9 @@
 use std::path::Path;
+use std::str::FromStr;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow, bail};
 use indexmap::IndexMap;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 const XML_PROLOG: &str = "<?xml version=\"1.0\" encoding=\"utf-8\"?>";
