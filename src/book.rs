@@ -11,7 +11,7 @@ pub struct Book {
     #[serde(rename = "@Count")]
     pub count: usize,
     #[serde(rename = "Sheet")]
-    pub sheets: Vec<Sheet>,
+    pub sheets: Vec<RawSheet>,
 }
 
 impl Book {
@@ -20,7 +20,7 @@ impl Book {
     }
 
     pub fn from_str(contents: &str) -> Result<Self> {
-        let book: Self = quick_xml::de::from_str(contents)?;
+        let book: Self = quick_xml::de::from_str(&contents)?;
         Ok(book)
     }
 
@@ -37,7 +37,7 @@ impl Book {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Sheet {
+pub struct RawSheet {
     #[serde(rename = "@Name")]
     pub name: String,
     #[serde(rename = "@Count")]
@@ -80,4 +80,258 @@ pub struct SheetData {
 pub struct SheetDataParam {
     #[serde(flatten)]
     pub values: IndexMap<String, String>,
+}
+
+pub trait PublicArrayEntry {
+    fn get_key(&self) -> &str;
+    fn key_identifier() -> &'static str;
+}
+
+pub struct Sheet<T> {
+    pub name: String,
+    pub header: SheetHeader,
+    pub data: T,
+}
+
+impl<T> TryFrom<RawSheet> for Sheet<T>
+where
+    T: FromSheetData,
+{
+    type Error = anyhow::Error;
+
+    fn try_from(value: RawSheet) -> Result<Self> {
+        Ok(Self {
+            name: value.name,
+            header: value.header,
+            data: T::from_sheet_data(value.data)?,
+        })
+    }
+}
+
+impl<T> From<&Sheet<T>> for RawSheet
+where
+    T: ToSheetData,
+{
+    fn from(value: &Sheet<T>) -> Self {
+        let data = value.data.to_sheet_data(&value.header);
+        Self {
+            name: value.name.clone(),
+            count: data.params.len(),
+            header: value.header.clone(),
+            data,
+        }
+    }
+}
+
+impl<T> From<Sheet<T>> for RawSheet
+where
+    T: ToSheetData,
+{
+    fn from(value: Sheet<T>) -> Self {
+        let data = value.data.to_sheet_data(&value.header);
+        Self {
+            name: value.name,
+            count: data.params.len(),
+            header: value.header,
+            data,
+        }
+    }
+}
+
+pub trait FromSheetData: Sized {
+    fn from_sheet_data(sheet: SheetData) -> Result<Self>;
+}
+
+impl<T> FromSheetData for Vec<T>
+where
+    T: FromSheetDataParam,
+{
+    fn from_sheet_data(sheet: SheetData) -> Result<Self> {
+        let mut items = vec![];
+        for row in sheet.params {
+            items.push(T::from_sheet_data_param(row.values)?);
+        }
+        Ok(items)
+    }
+}
+
+impl<T> FromSheetData for IndexMap<String, Vec<T>>
+where
+    T: FromSheetDataParam + PublicArrayEntry,
+{
+    fn from_sheet_data(sheet: SheetData) -> Result<Self> {
+        let mut items = IndexMap::new();
+        let mut key = None;
+        let mut bucket = vec![];
+        for row in sheet.params.into_iter() {
+            let item = T::from_sheet_data_param(row.values)?;
+            let item_key = item.get_key();
+            if !item_key.is_empty() {
+                if let Some(key) = key {
+                    items.insert(key, std::mem::take(&mut bucket));
+                }
+                key = Some(item_key.to_string());
+            } else {
+                if key.is_none() {
+                    bail!("found values before a key in public array");
+                }
+                bucket.push(item);
+            }
+        }
+        if let Some(key) = key {
+            items.insert(key, bucket);
+        }
+        Ok(items)
+    }
+}
+
+pub trait FromSheetDataParam: Sized {
+    fn from_sheet_data_param(values: IndexMap<String, String>) -> Result<Self>;
+}
+
+pub trait FromSheetParamAttribute: Sized {
+    fn from_sheet_param_attribute(value: String) -> Result<Self>;
+}
+
+impl<T> FromSheetParamAttribute for Option<T>
+where
+    T: FromStr,
+{
+    fn from_sheet_param_attribute(value: String) -> Result<Self> {
+        if value.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(T::from_str(&value).map_err(|_| {
+                anyhow!("unable to parse from value '{}'", value)
+            })?))
+        }
+    }
+}
+
+impl<T> FromSheetParamAttribute for Vec<T>
+where
+    T: FromStr,
+    <T as FromStr>::Err: std::fmt::Debug
+{
+    fn from_sheet_param_attribute(value: String) -> Result<Self> {
+        let mut items = vec![];
+        for part in value.split(';').filter(|p| !p.is_empty()) {
+            items.push(T::from_str(part).unwrap());
+        }
+        Ok(items)
+    }
+}
+
+impl FromSheetParamAttribute for String {
+    fn from_sheet_param_attribute(value: String) -> Result<Self> {
+        Ok(value)
+    }
+}
+
+impl FromSheetParamAttribute for bool {
+    fn from_sheet_param_attribute(value: String) -> Result<Self> {
+        let value: bool = value.parse()?;
+        Ok(value)
+    }
+}
+
+pub trait ToSheetData {
+    fn to_sheet_data(&self, header: &SheetHeader) -> SheetData;
+}
+
+impl<T> ToSheetData for Vec<T>
+where
+    T: ToSheetDataParam,
+{
+    fn to_sheet_data(&self, _header: &SheetHeader) -> SheetData {
+        let mut params = vec![];
+        for row in self {
+            params.push(row.to_sheet_data_param());
+        }
+        SheetData { params }
+    }
+}
+
+impl<T> ToSheetData for IndexMap<String, Vec<T>>
+where
+    T: ToSheetDataParam + PublicArrayEntry,
+{
+    fn to_sheet_data(&self, header: &SheetHeader) -> SheetData {
+        let mut params = vec![];
+        for (key, bucket) in self {
+            let key_param_values = header
+                .params
+                .iter()
+                .map(|param| format!("@{}", param.ident))
+                .map(|param| {
+                    if param == T::key_identifier() {
+                        (param, key.clone())
+                    } else {
+                        (param, String::new())
+                    }
+                })
+                .collect();
+            params.push(SheetDataParam {
+                values: key_param_values,
+            });
+            for item in bucket {
+                params.push(item.to_sheet_data_param());
+            }
+        }
+        SheetData { params }
+    }
+}
+
+pub trait ToSheetDataParam {
+    fn to_sheet_data_param(&self) -> SheetDataParam {
+        SheetDataParam {
+            values: self.to_sheet_data_param_values(),
+        }
+    }
+
+    fn to_sheet_data_param_values(&self) -> IndexMap<String, String>;
+}
+
+pub trait ToSheetParamAttribute {
+    fn to_sheet_param_attribute(&self) -> String;
+}
+
+impl<T> ToSheetParamAttribute for Option<T>
+where
+    T: ToString,
+{
+    fn to_sheet_param_attribute(&self) -> String {
+        match self {
+            Some(value) => value.to_string(),
+            None => String::new(),
+        }
+    }
+}
+
+impl<T> ToSheetParamAttribute for Vec<T>
+where
+    T: ToString,
+{
+    fn to_sheet_param_attribute(&self) -> String {
+        let mut attr: String = self
+            .iter()
+            .map(|item| item.to_string())
+            .join(";");
+        if !attr.is_empty() {
+            attr.push(';');
+        }
+        attr
+    }
+}
+
+impl ToSheetParamAttribute for String {
+    fn to_sheet_param_attribute(&self) -> String {
+        self.clone()
+    }
+}
+
+impl ToSheetParamAttribute for bool {
+    fn to_sheet_param_attribute(&self) -> String {
+        self.to_string()
+    }
 }
