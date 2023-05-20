@@ -18,11 +18,11 @@ pub struct Book {
 
 impl Book {
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
-        Self::from_str(&std::fs::read_to_string(path)?)
+        Self::from_string(std::fs::read_to_string(path)?)
     }
 
-    pub fn from_str(contents: &str) -> Result<Self> {
-        let book: Self = quick_xml::de::from_str(&contents)?;
+    pub fn from_string<S: AsRef<str>>(contents: S) -> Result<Self> {
+        let book: Self = quick_xml::de::from_str(contents.as_ref())?;
         Ok(book)
     }
 
@@ -103,9 +103,9 @@ where
 
     fn try_from(value: RawSheet) -> Result<Self> {
         Ok(Self {
+            data: T::from_sheet_data(&value.header, value.data)?,
             name: value.name,
             header: value.header,
-            data: T::from_sheet_data(value.data)?,
         })
     }
 }
@@ -141,17 +141,25 @@ where
 }
 
 pub trait FromSheetData: Sized {
-    fn from_sheet_data(sheet: SheetData) -> Result<Self>;
+    fn from_sheet_data(header: &SheetHeader, sheet: SheetData) -> Result<Self>;
+}
+
+pub trait FromSheetDataParam: Sized {
+    fn from_sheet_data_param(header: &SheetHeaderParam, values: IndexMap<String, String>) -> Result<Self>;
+}
+
+pub trait FromSheetParamAttribute: Sized {
+    fn from_sheet_param_attribute(header: &SheetHeaderParam, value: String) -> Result<Self>;
 }
 
 impl<T> FromSheetData for Vec<T>
 where
     T: FromSheetDataParam,
 {
-    fn from_sheet_data(sheet: SheetData) -> Result<Self> {
+    fn from_sheet_data(header: &SheetHeader, sheet: SheetData) -> Result<Self> {
         let mut items = vec![];
-        for row in sheet.params {
-            items.push(T::from_sheet_data_param(row.values)?);
+        for (header_row, data_row) in header.params.iter().zip(sheet.params) {
+            items.push(T::from_sheet_data_param(header_row, data_row.values)?);
         }
         Ok(items)
     }
@@ -161,12 +169,12 @@ impl<T> FromSheetData for IndexMap<String, Vec<T>>
 where
     T: FromSheetDataParam + PublicArrayEntry,
 {
-    fn from_sheet_data(sheet: SheetData) -> Result<Self> {
+    fn from_sheet_data(header: &SheetHeader, sheet: SheetData) -> Result<Self> {
         let mut items = IndexMap::new();
         let mut key = None;
         let mut bucket = vec![];
-        for row in sheet.params.into_iter() {
-            let item = T::from_sheet_data_param(row.values)?;
+        for (header_row, data_row) in header.params.iter().zip(sheet.params) {
+            let item = T::from_sheet_data_param(header_row, data_row.values)?;
             let item_key = item.get_key();
             if !item_key.is_empty() {
                 if let Some(key) = key {
@@ -187,19 +195,11 @@ where
     }
 }
 
-pub trait FromSheetDataParam: Sized {
-    fn from_sheet_data_param(values: IndexMap<String, String>) -> Result<Self>;
-}
-
-pub trait FromSheetParamAttribute: Sized {
-    fn from_sheet_param_attribute(value: String) -> Result<Self>;
-}
-
 impl<T> FromSheetParamAttribute for Option<T>
 where
     T: FromStr,
 {
-    fn from_sheet_param_attribute(value: String) -> Result<Self> {
+    fn from_sheet_param_attribute(_: &SheetHeaderParam, value: String) -> Result<Self> {
         if value.is_empty() {
             Ok(None)
         } else {
@@ -215,7 +215,7 @@ where
     T: FromStr,
     <T as FromStr>::Err: std::fmt::Debug
 {
-    fn from_sheet_param_attribute(value: String) -> Result<Self> {
+    fn from_sheet_param_attribute(_: &SheetHeaderParam, value: String) -> Result<Self> {
         let mut items = vec![];
         for part in value.split(';').filter(|p| !p.is_empty()) {
             items.push(T::from_str(part).unwrap());
@@ -225,13 +225,13 @@ where
 }
 
 impl FromSheetParamAttribute for String {
-    fn from_sheet_param_attribute(value: String) -> Result<Self> {
+    fn from_sheet_param_attribute(_: &SheetHeaderParam, value: String) -> Result<Self> {
         Ok(value)
     }
 }
 
 impl FromSheetParamAttribute for bool {
-    fn from_sheet_param_attribute(value: String) -> Result<Self> {
+    fn from_sheet_param_attribute(_: &SheetHeaderParam, value: String) -> Result<Self> {
         let value: bool = value.parse()?;
         Ok(value)
     }
