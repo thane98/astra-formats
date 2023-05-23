@@ -181,7 +181,7 @@ impl<'source> PeekableLexer<'source> {
             self.peeked = Some(
                 self.lexer
                     .next()
-                    .map(|r| r.unwrap_or(Token::Error)),
+                    .and_then(|r| Some(r.unwrap_or(Token::Error))),
             );
         }
         self.peeked.unwrap()
@@ -205,7 +205,7 @@ impl<'source> Iterator for PeekableLexer<'source> {
         } else {
             self.lexer
                 .next()
-                .map(|r| r.unwrap_or(Token::Error))
+                .and_then(|r| Some(r.unwrap_or(Token::Error)))
         }
     }
 }
@@ -401,7 +401,7 @@ impl<'source> Parser<'source> {
 
     pub fn expect_number(&mut self) -> Result<u32> {
         self.expect(Token::Number)?;
-        self.lexer.slice().parse::<u32>()
+        u32::from_str_radix(self.lexer.slice(), 10)
             .map_err(|err| ParseError::BadNumber(self.location(), err.to_string()))
     }
 
@@ -472,7 +472,7 @@ pub fn parse_astra_script(source: &str) -> Result<IndexMap<String, Vec<MsbtToken
                 entries.insert(key, tokens);
             }
             Err(err) => {
-                parser.skip_to_next_entry()?;
+                let _ = parser.skip_to_next_entry()?;
                 errors.push(err);
             }
         }

@@ -120,7 +120,7 @@ impl<'a> MsbtScanner<'a> {
 pub fn parse_msbt_script(contents: &IndexMap<String, Vec<u16>>) -> Result<String> {
     let mut out = String::new();
     for (k, v) in contents {
-        pretty_print(&mut out, k, &parse_msbt_entries(v)?)?;
+        pretty_print(&mut out, k, &parse_msbt_entries(&v)?)?;
     }
     Ok(out)
 }
@@ -269,7 +269,7 @@ fn parse_msbt_entries(contents: &[u16]) -> Result<Vec<MsbtToken>> {
 }
 
 fn pretty_print(out: &mut String, key: &str, tokens: &[MsbtToken]) -> Result<()> {
-    writeln!(out, "[{}]", key)?;
+    write!(out, "[{}]\n", key)?;
     for token in tokens {
         match token {
             MsbtToken::PlainText(text) => out.push_str(text),

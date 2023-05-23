@@ -291,7 +291,7 @@ fn serialize_txt2(messages: &IndexMap<String, Vec<u16>>) -> Result<Vec<u8>> {
     let base_position = messages.len() * 4 + 4;
     for message in messages.values() {
         text_offsets.push(base_position + raw_text.len());
-        raw_text.extend(message.iter().flat_map(|b| b.to_le_bytes().into_iter()));
+        raw_text.extend(message.into_iter().flat_map(|b| b.to_le_bytes().into_iter()));
     }
 
     let length_without_header = messages.len() * 4 + raw_text.len() + 4;
