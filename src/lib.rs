@@ -11,8 +11,8 @@ pub mod texture;
 
 pub use anyhow as error;
 pub use binrw;
-pub use indexmap;
 pub use image;
+pub use indexmap;
 
 pub use asset::*;
 
@@ -22,6 +22,6 @@ pub use msbt::MessageMap;
 pub use sprite_atlas::SpriteAtlasWrapper;
 
 #[cfg(feature = "msbt_script")]
-pub use msbt_script::{MsbtToken, parse_msbt_script, pack_msbt_entries, pack_msbt_entry};
+pub use astra_script::{pack_astra_script, parse_astra_script, ParseError};
 #[cfg(feature = "msbt_script")]
-pub use astra_script::{ParseError, parse_astra_script, pack_astra_script};
+pub use msbt_script::{pack_msbt_entries, pack_msbt_entry, parse_msbt_script, MsbtToken};

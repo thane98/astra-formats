@@ -32,8 +32,10 @@ impl ParseError {
         let mut files = SimpleFiles::new();
         let id = files.add("source", source_script);
         match self {
-            ParseError::Aggregated(errors) => for error in errors {
-                let _ = term::emit(&mut writer, &config, &files, &error.to_diagnostic(id));
+            ParseError::Aggregated(errors) => {
+                for error in errors {
+                    let _ = term::emit(&mut writer, &config, &files, &error.to_diagnostic(id));
+                }
             }
             _ => {
                 let _ = term::emit(&mut writer, &config, &files, &self.to_diagnostic(id));
@@ -178,11 +180,7 @@ impl<'source> PeekableLexer<'source> {
 
     pub fn peek(&mut self) -> Option<Token> {
         if self.peeked.is_none() {
-            self.peeked = Some(
-                self.lexer
-                    .next()
-                    .and_then(|r| Some(r.unwrap_or(Token::Error))),
-            );
+            self.peeked = Some(self.lexer.next().map(|r| r.unwrap_or(Token::Error)));
         }
         self.peeked.unwrap()
     }
@@ -203,9 +201,7 @@ impl<'source> Iterator for PeekableLexer<'source> {
         if let Some(peeked) = self.peeked.take() {
             peeked
         } else {
-            self.lexer
-                .next()
-                .and_then(|r| Some(r.unwrap_or(Token::Error)))
+            self.lexer.next().map(|r| r.unwrap_or(Token::Error))
         }
     }
 }
@@ -401,7 +397,7 @@ impl<'source> Parser<'source> {
 
     pub fn expect_number(&mut self) -> Result<u32> {
         self.expect(Token::Number)?;
-        u32::from_str_radix(self.lexer.slice(), 10)
+        self.lexer.slice().parse::<u32>()
             .map_err(|err| ParseError::BadNumber(self.location(), err.to_string()))
     }
 
@@ -472,7 +468,7 @@ pub fn parse_astra_script(source: &str) -> Result<IndexMap<String, Vec<MsbtToken
                 entries.insert(key, tokens);
             }
             Err(err) => {
-                let _ = parser.skip_to_next_entry()?;
+                parser.skip_to_next_entry()?;
                 errors.push(err);
             }
         }

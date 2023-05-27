@@ -176,7 +176,7 @@ fn read_assets<R: Read + Seek>(
     reader: &mut R,
     options: &ReadOptions,
     types: &[AssetFileType],
-    objects: &[AssetFileObject], 
+    objects: &[AssetFileObject],
     data_offset: u64,
 ) -> BinResult<Vec<Asset>> {
     let mut assets = vec![];

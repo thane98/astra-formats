@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::str::FromStr;
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{anyhow, bail, Result};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -18,11 +18,11 @@ pub struct Book {
 
 impl Book {
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
-        Self::from_str(&std::fs::read_to_string(path)?)
+        Self::from_string(&std::fs::read_to_string(path)?)
     }
 
-    pub fn from_str(contents: &str) -> Result<Self> {
-        let book: Self = quick_xml::de::from_str(&contents)?;
+    pub fn from_string(contents: &str) -> Result<Self> {
+        let book: Self = quick_xml::de::from_str(contents)?;
         Ok(book)
     }
 
@@ -213,7 +213,7 @@ where
 impl<T> FromSheetParamAttribute for Vec<T>
 where
     T: FromStr,
-    <T as FromStr>::Err: std::fmt::Debug
+    <T as FromStr>::Err: std::fmt::Debug,
 {
     fn from_sheet_param_attribute(value: String) -> Result<Self> {
         let mut items = vec![];
@@ -315,10 +315,7 @@ where
     T: ToString,
 {
     fn to_sheet_param_attribute(&self) -> String {
-        let mut attr: String = self
-            .iter()
-            .map(|item| item.to_string())
-            .join(";");
+        let mut attr: String = self.iter().map(|item| item.to_string()).join(";");
         if !attr.is_empty() {
             attr.push(';');
         }

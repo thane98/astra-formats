@@ -21,9 +21,7 @@ pub unsafe extern "C" fn text_bundle_parse(
     len: usize,
 ) -> FfiResult<Box<TextBundle>> {
     let slice = std::slice::from_raw_parts(data, len);
-    TextBundle::from_slice(slice)
-        .map(Box::new)
-        .into()
+    TextBundle::from_slice(slice).map(Box::new).into()
 }
 
 #[no_mangle]

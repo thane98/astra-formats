@@ -120,7 +120,7 @@ impl<'a> MsbtScanner<'a> {
 pub fn parse_msbt_script(contents: &IndexMap<String, Vec<u16>>) -> Result<String> {
     let mut out = String::new();
     for (k, v) in contents {
-        pretty_print(&mut out, k, &parse_msbt_entries(&v)?)?;
+        pretty_print(&mut out, k, &parse_msbt_entries(v)?)?;
     }
     Ok(out)
 }
@@ -269,7 +269,7 @@ fn parse_msbt_entries(contents: &[u16]) -> Result<Vec<MsbtToken>> {
 }
 
 fn pretty_print(out: &mut String, key: &str, tokens: &[MsbtToken]) -> Result<()> {
-    write!(out, "[{}]\n", key)?;
+    writeln!(out, "[{}]", key)?;
     for token in tokens {
         match token {
             MsbtToken::PlainText(text) => out.push_str(text),
@@ -466,7 +466,11 @@ pub fn pack_msbt_entry(tokens: &[MsbtToken]) -> Vec<u16> {
                 packed.push(0x5);
                 packed.push(0x0);
             }
-            MsbtToken::Fade { fade_type, duration, unknown } => CommandPacker::new(0x7, *fade_type)
+            MsbtToken::Fade {
+                fade_type,
+                duration,
+                unknown,
+            } => CommandPacker::new(0x7, *fade_type)
                 .int32(*duration)
                 .optional_int16(*unknown)
                 .pack(&mut packed),
