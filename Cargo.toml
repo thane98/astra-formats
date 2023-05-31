@@ -3,6 +3,9 @@ name = "astra_formats"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+crate-type = ["lib", "cdylib"]
+
 [features]
 default = ["msbt_script"]
 msbt_script = ["dep:logos", "dep:codespan-reporting"]
