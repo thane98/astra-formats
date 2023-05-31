@@ -5,7 +5,7 @@ use anyhow::Result;
 use image::DynamicImage;
 use indexmap::IndexMap;
 
-use crate::{AtlasBundle, SpriteAtlasWrapper, TextBundle};
+use crate::{AtlasBundle, MessageBundle, SpriteAtlasWrapper, TextBundle};
 
 thread_local!(static ERROR_MESSAGE: RefCell<Option<String>> = RefCell::new(None));
 
@@ -71,6 +71,107 @@ pub unsafe extern "C" fn text_bundle_put_string(
 
 #[no_mangle]
 pub unsafe extern "C" fn text_bundle_free(_: Box<TextBundle>) {}
+
+#[no_mangle]
+pub unsafe extern "C" fn message_bundle_open(path: *const i8) -> FfiResult<Box<MessageBundle>> {
+    let path = CStr::from_ptr(path).to_string_lossy().to_string();
+    MessageBundle::load(path).map(Box::new).into()
+}
+
+#[no_mangle]
+#[cfg(feature = "msbt_script")]
+pub unsafe extern "C" fn message_bundle_take_script(
+    bundle: &mut MessageBundle,
+) -> FfiResult<*mut i8> {
+    bundle
+        .take_script()
+        .map(|s| CString::new(s).unwrap().into_raw())
+        .into()
+}
+
+#[no_mangle]
+#[cfg(feature = "msbt_script")]
+pub unsafe extern "C" fn message_bundle_take_entries(
+    bundle: &mut MessageBundle,
+) -> FfiResult<Box<IndexMap<String, String>>> {
+    bundle.take_entries().map(Box::new).into()
+}
+
+#[no_mangle]
+#[cfg(feature = "msbt_script")]
+pub unsafe extern "C" fn message_bundle_put_entries(
+    bundle: &mut MessageBundle,
+    entries: &IndexMap<String, String>,
+) -> FfiResult<()> {
+    bundle.replace_entries(entries.clone()).into()
+}
+
+#[no_mangle]
+#[cfg(feature = "msbt_script")]
+pub unsafe extern "C" fn message_bundle_put_script(
+    bundle: &mut MessageBundle,
+    script: *const i8,
+) -> FfiResult<()> {
+    let script = CStr::from_ptr(script).to_string_lossy().to_string();
+    bundle.replace_script(&script).into()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn message_bundle_serialize(
+    bundle: &mut MessageBundle,
+) -> FfiResult<FfiVec<u8>> {
+    bundle.serialize().map(|v| v.into()).into()
+}
+
+#[no_mangle]
+#[cfg(feature = "msbt_script")]
+pub unsafe extern "C" fn message_bundle_free(_: Box<MessageBundle>) {}
+
+#[no_mangle]
+#[cfg(feature = "msbt_script")]
+pub unsafe extern "C" fn msbt_get_keys(
+    entries_map: &IndexMap<String, String>,
+) -> FfiVec<FfiVec<u8>> {
+    entries_map.keys().map(|k| k.to_owned().into()).collect()
+}
+
+#[no_mangle]
+#[cfg(feature = "msbt_script")]
+pub unsafe extern "C" fn msbt_keys_free(entries: FfiVec<FfiVec<u8>>) {
+    let msbt = Box::from_raw(std::slice::from_raw_parts_mut(entries.data, entries.len));
+    for key in &*msbt {
+        let _ = Box::from_raw(std::slice::from_raw_parts_mut(key.data, key.len));
+    }
+}
+
+#[no_mangle]
+#[cfg(feature = "msbt_script")]
+pub unsafe extern "C" fn msbt_get_entry(
+    entries_map: &IndexMap<String, String>,
+    key: *const i8,
+) -> *mut i8 {
+    let key = CStr::from_ptr(key).to_string_lossy().to_string();
+    entries_map
+        .get(&key)
+        .map(|k| CString::new(k.as_bytes()).unwrap().into_raw())
+        .unwrap_or(std::ptr::null_mut())
+}
+
+#[no_mangle]
+#[cfg(feature = "msbt_script")]
+pub unsafe extern "C" fn msbt_put_entry(
+    entries_map: &mut IndexMap<String, String>,
+    key: *const i8,
+    value: *const i8,
+) {
+    let key = CStr::from_ptr(key).to_string_lossy().to_string();
+    let value = CStr::from_ptr(value).to_string_lossy().to_string();
+    entries_map.insert(key, value);
+}
+
+#[no_mangle]
+#[cfg(feature = "msbt_script")]
+pub unsafe extern "C" fn msbt_free(_: Box<IndexMap<String, String>>) {}
 
 #[no_mangle]
 pub unsafe extern "C" fn sprite_atlas_open(path: *const i8) -> FfiResult<Box<SpriteAtlasWrapper>> {
@@ -180,12 +281,6 @@ impl From<&DynamicImage> for ImageFormat {
 }
 
 #[repr(C)]
-pub struct KeyValuePair {
-    pub key: FfiVec<u8>,
-    pub value: FfiVec<u8>,
-}
-
-#[repr(C)]
 pub struct FfiVec<T> {
     pub len: usize,
     pub data: *mut T,
@@ -209,19 +304,6 @@ impl From<String> for FfiVec<u8> {
     }
 }
 
-impl From<IndexMap<String, String>> for FfiVec<KeyValuePair> {
-    fn from(map: IndexMap<String, String>) -> Self {
-        let mut entries = Vec::with_capacity(map.len());
-        for (key, value) in map {
-            entries.push(KeyValuePair {
-                key: key.into(),
-                value: value.into(),
-            })
-        }
-        entries.into()
-    }
-}
-
 impl<T: Sized> From<Option<Vec<T>>> for FfiVec<T> {
     fn from(value: Option<Vec<T>>) -> Self {
         match value {
@@ -240,5 +322,12 @@ impl<T: Sized> From<Vec<T>> for FfiVec<T> {
             len: value.len(),
             data: Box::leak(value.into_boxed_slice()).as_mut_ptr(),
         }
+    }
+}
+
+impl<T: Sized> FromIterator<T> for FfiVec<T> {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let v: Vec<T> = iter.into_iter().collect();
+        v.into()
     }
 }

@@ -10,8 +10,9 @@ use lzma_rs::decompress::UnpackedSize;
 
 use crate::sprite_atlas::SpriteAtlasWrapper;
 use crate::{
-    Asset, AssetFile, MessageMap, MonoBehavior, Sprite, SpriteAtlas, TerrainData, TextAsset,
-    Texture2D,
+    pack_astra_script, pack_msbt_entry, parse_astra_script_entry, parse_msbt_entry,
+    parse_msbt_script, Asset, AssetFile, MessageMap, MonoBehavior, Sprite, SpriteAtlas,
+    TerrainData, TextAsset, Texture2D,
 };
 
 #[derive(Debug)]
@@ -513,26 +514,50 @@ impl MessageBundle {
         self.0.rename_cab(new_file_name)
     }
 
-    pub fn take_msbt(&mut self) -> IndexMap<String, Vec<u16>> {
-        std::mem::take(&mut self.1.messages)
+    #[cfg(not(feature = "msbt_script"))]
+    pub fn extract_data(&mut self) -> Result<IndexMap<String, Vec<u16>>> {
+        Ok(std::mem::take(&mut self.1.messages))
     }
 
-    pub fn take_text(&mut self) -> Result<IndexMap<String, String>> {
+    #[cfg(feature = "msbt_script")]
+    pub fn take_script(&mut self) -> Result<String> {
+        // Technically, we don't need to consume this.
+        // But it follows the convention of the rest of the package and avoids leaking memory
+        // when the bundle is retained to put data into it later.
+        let raw = std::mem::take(&mut self.1.messages);
+        parse_msbt_script(&raw)
+    }
+
+    #[cfg(feature = "msbt_script")]
+    pub fn take_entries(&mut self) -> Result<IndexMap<String, String>> {
         let mut out = IndexMap::new();
-        for (k, v) in self.take_msbt() {
-            out.insert(k, String::from_utf16(&v)?);
+        let raw = std::mem::take(&mut self.1.messages);
+        for (k, v) in raw {
+            out.insert(k, parse_msbt_entry(&v)?);
         }
         Ok(out)
     }
 
-    pub fn replace_msbt(&mut self, new_data: IndexMap<String, Vec<u16>>) {
+    #[cfg(not(feature = "msbt_script"))]
+    pub fn replace_data(&mut self, new_data: IndexMap<String, Vec<u16>>) -> Result<()> {
         self.1.messages = new_data;
+        Ok(())
     }
 
-    pub fn replace_text(&mut self, new_data: IndexMap<String, String>) {
-        self.1.messages = new_data
-            .into_iter()
-            .map(|(k, v)| (k, v.encode_utf16().collect()))
-            .collect();
+    #[cfg(feature = "msbt_script")]
+    pub fn replace_script(&mut self, merged_entries: &str) -> Result<()> {
+        self.1.messages = pack_astra_script(merged_entries)?;
+        Ok(())
+    }
+
+    #[cfg(feature = "msbt_script")]
+    pub fn replace_entries(&mut self, new_data: IndexMap<String, String>) -> Result<()> {
+        let mut messages = IndexMap::new();
+        for (k, v) in new_data {
+            let msbt_tokens = parse_astra_script_entry(&v)?;
+            messages.insert(k, pack_msbt_entry(&msbt_tokens));
+        }
+        self.1.messages = messages;
+        Ok(())
     }
 }

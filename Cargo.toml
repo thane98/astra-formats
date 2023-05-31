@@ -3,23 +3,21 @@ name = "astra_formats"
 version = "0.1.0"
 edition = "2021"
 
-[lib]
-crate-type = ["lib", "cdylib"]
-
 [features]
 default = ["msbt_script"]
 msbt_script = ["dep:logos", "dep:codespan-reporting"]
+ffi = []
 
 [dependencies]
 serde = { version = "1.0.152", features = ["derive"] }
-quick-xml = { version = "0.27.1", features = ["serialize"] }
+quick-xml = { version = "0.28.2", features = ["serialize"] }
 anyhow = "1.0.65"
 indexmap = { version = "1.7.0", features = ["serde"] }
 itertools = "0.10.5"
 image = "0.24.5"
 byteorder = "1.4.3"
 encoding_rs = "0.8.31"
-lz4_flex = "0.9.5"
+lz4_flex = "0.10.0"
 binrw = "0.10.0"
 astc-decode = "0.3.1"
 tegra_swizzle = "0.3.0"

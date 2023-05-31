@@ -28,7 +28,7 @@ pub enum ParseError {
 impl ParseError {
     pub fn report(&self, source_script: &str) {
         let mut writer = StandardStream::stderr(ColorChoice::Always);
-        let config = codespan_reporting::term::Config::default();
+        let config = term::Config::default();
         let mut files = SimpleFiles::new();
         let id = files.add("source", source_script);
         match self {
@@ -211,9 +211,13 @@ struct Parser<'source> {
 }
 
 impl<'source> Parser<'source> {
-    pub fn next_entry(&mut self) -> Result<(String, Vec<MsbtToken>)> {
+    pub fn next_keyed_entry(&mut self) -> Result<(String, Vec<MsbtToken>)> {
         let key = self.expect_identifier()?;
         self.expect(Token::NewLine)?;
+        Ok((key, self.next_entry()?))
+    }
+
+    pub fn next_entry(&mut self) -> Result<Vec<MsbtToken>> {
         let mut commands = vec![];
         loop {
             if self.at_end() || self.peek()? == Token::Identifier {
@@ -341,14 +345,14 @@ impl<'source> Parser<'source> {
                     return Err(ParseError::LexerError(
                         self.location(),
                         self.lexer.slice().to_string(),
-                    ))
+                    ));
                 }
             }
         }
         while let Some(MsbtToken::NewLine) = commands.last() {
             commands.pop();
         }
-        Ok((key, commands))
+        Ok(commands)
     }
 
     fn push_or_extend_text(commands: &mut Vec<MsbtToken>, new_text: &str) {
@@ -397,7 +401,9 @@ impl<'source> Parser<'source> {
 
     pub fn expect_number(&mut self) -> Result<u32> {
         self.expect(Token::Number)?;
-        self.lexer.slice().parse::<u32>()
+        self.lexer
+            .slice()
+            .parse::<u32>()
             .map_err(|err| ParseError::BadNumber(self.location(), err.to_string()))
     }
 
@@ -463,7 +469,7 @@ pub fn parse_astra_script(source: &str) -> Result<IndexMap<String, Vec<MsbtToken
     let mut entries = IndexMap::new();
     let mut errors = vec![];
     while !parser.at_end() {
-        match parser.next_entry() {
+        match parser.next_keyed_entry() {
             Ok((key, tokens)) => {
                 entries.insert(key, tokens);
             }
@@ -480,6 +486,13 @@ pub fn parse_astra_script(source: &str) -> Result<IndexMap<String, Vec<MsbtToken
     } else {
         Err(ParseError::Aggregated(errors))
     }
+}
+
+pub fn parse_astra_script_entry(source: &str) -> Result<Vec<MsbtToken>> {
+    Parser {
+        lexer: PeekableLexer::new(source),
+    }
+    .next_entry()
 }
 
 pub fn pack_astra_script(source: &str) -> Result<IndexMap<String, Vec<u16>>> {

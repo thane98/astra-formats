@@ -120,12 +120,18 @@ impl<'a> MsbtScanner<'a> {
 pub fn parse_msbt_script(contents: &IndexMap<String, Vec<u16>>) -> Result<String> {
     let mut out = String::new();
     for (k, v) in contents {
-        pretty_print(&mut out, k, &parse_msbt_entries(v)?)?;
+        pretty_print(&mut out, k, &parse_msbt_tokens(v)?)?;
     }
     Ok(out)
 }
 
-fn parse_msbt_entries(contents: &[u16]) -> Result<Vec<MsbtToken>> {
+pub fn parse_msbt_entry(contents: &[u16]) -> Result<String> {
+    let mut out = String::new();
+    pretty_print_tokens(&mut out, &parse_msbt_tokens(contents)?)?;
+    Ok(out)
+}
+
+fn parse_msbt_tokens(contents: &[u16]) -> Result<Vec<MsbtToken>> {
     let mut tokens = vec![];
     let mut scanner = MsbtScanner::new(contents);
     while !scanner.at_end() {
@@ -270,6 +276,12 @@ fn parse_msbt_entries(contents: &[u16]) -> Result<Vec<MsbtToken>> {
 
 fn pretty_print(out: &mut String, key: &str, tokens: &[MsbtToken]) -> Result<()> {
     writeln!(out, "[{}]", key)?;
+    pretty_print_tokens(out, tokens)?;
+    out.push_str("\n\n");
+    Ok(())
+}
+
+fn pretty_print_tokens(out: &mut String, tokens: &[MsbtToken]) -> Result<()> {
     for token in tokens {
         match token {
             MsbtToken::PlainText(text) => out.push_str(text),
@@ -330,7 +342,6 @@ fn pretty_print(out: &mut String, key: &str, tokens: &[MsbtToken]) -> Result<()>
             }
         }
     }
-    out.push_str("\n\n");
     Ok(())
 }
 
