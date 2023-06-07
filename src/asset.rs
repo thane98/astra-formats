@@ -4,9 +4,7 @@ use std::ops::{Deref, DerefMut};
 
 use anyhow::{bail, Result};
 use binrw::meta::{EndianKind, ReadEndian, WriteEndian};
-use binrw::{
-    binread, binrw, BinRead, BinResult, BinWrite, Endian, NullString, ReadOptions, WriteOptions,
-};
+use binrw::{binread, binrw, BinRead, BinResult, BinWrite, Endian, NullString};
 use byteorder::{BigEndian, WriteBytesExt};
 use encoding_rs::UTF_8;
 use itertools::{izip, Itertools};
@@ -70,18 +68,18 @@ pub struct AssetFile {
     ref_type_count: u32,
     user_info: NullString,
 
-    #[br(parse_with = |reader, options, _: ()| read_assets(reader, options, &types, &objects, header.data_offset))]
+    #[br(parse_with = |reader, endian, _: ()| read_assets(reader, endian, &types, &objects, header.data_offset))]
     pub assets: Vec<Asset>,
 }
 
 impl BinWrite for AssetFile {
-    type Args = ();
+    type Args<'a> = ();
 
     fn write_options<W: Write + Seek>(
         &self,
         writer: &mut W,
-        options: &WriteOptions,
-        _: Self::Args,
+        endian: Endian,
+        _: Self::Args<'_>,
     ) -> BinResult<()> {
         // Reserve space for the header. Don't know enough to build it yet.
         let base_position = writer.stream_position()?;
@@ -91,22 +89,22 @@ impl BinWrite for AssetFile {
 
         // Write the rest of the file (ignoring the header)
         let meta_data_base = writer.stream_position()?;
-        (self.types.len() as u32).write_options(writer, options, ())?;
-        self.types.write_options(writer, options, ())?;
-        (self.assets.len() as u32).write_options(writer, options, ())?;
+        (self.types.len() as u32).write_options(writer, endian, ())?;
+        self.types.write_options(writer, endian, ())?;
+        (self.assets.len() as u32).write_options(writer, endian, ())?;
         write_padding(writer, 4)?;
         // Objects. Don't know the object sizes yet, so come back later.
         let objects_position = writer.stream_position()?;
         for _ in 0..(24 * self.assets.len()) {
             writer.write_u8(0)?;
         }
-        (self.scripts.len() as u32).write_options(writer, options, ())?;
-        self.scripts.write_options(writer, options, ())?;
-        (self.externals.len() as u32).write_options(writer, options, ())?;
-        self.externals.write_options(writer, options, ())?;
+        (self.scripts.len() as u32).write_options(writer, endian, ())?;
+        self.scripts.write_options(writer, endian, ())?;
+        (self.externals.len() as u32).write_options(writer, endian, ())?;
+        self.externals.write_options(writer, endian, ())?;
         // Ref types - not supported yet.
         writer.write_u32::<BigEndian>(0)?;
-        self.user_info.write_options(writer, options, ())?;
+        self.user_info.write_options(writer, endian, ())?;
 
         let meta_data_size = writer.stream_position()? - meta_data_base;
         write_padding(writer, 16)?;
@@ -127,7 +125,7 @@ impl BinWrite for AssetFile {
         for (asset, object_index) in izip!(&self.assets, &self.object_order) {
             write_padding(writer, 8)?;
             let offset = writer.stream_position()? - start;
-            asset.write_options(writer, options, ())?;
+            asset.write_options(writer, endian, ())?;
             write_padding(writer, 4)?;
             objects[*object_index] = AssetFileObject {
                 path_id: 0,
@@ -162,7 +160,7 @@ impl BinWrite for AssetFile {
         header.enable_type_tree = 1;
         header.write_be(writer)?;
         writer.seek(SeekFrom::Start(objects_position))?;
-        objects.write_options(writer, options, ())?;
+        objects.write_options(writer, endian, ())?;
         writer.seek(SeekFrom::Start(end_position))?;
         Ok(())
     }
@@ -174,7 +172,7 @@ impl WriteEndian for AssetFile {
 
 fn read_assets<R: Read + Seek>(
     reader: &mut R,
-    options: &ReadOptions,
+    endian: Endian,
     types: &[AssetFileType],
     objects: &[AssetFileObject],
     data_offset: u64,
@@ -185,7 +183,7 @@ fn read_assets<R: Read + Seek>(
     for obj in sorted_objects {
         let ty = &types[obj.type_id as usize]; // TODO: Bounds check.
         reader.seek(SeekFrom::Start(data_offset + obj.offset))?;
-        assets.push(Asset::read_options(reader, options, ty.type_hash)?);
+        assets.push(Asset::read_options(reader, endian, ty.type_hash)?);
     }
     Ok(assets)
 }
@@ -474,41 +472,42 @@ impl Asset {
 }
 
 impl BinRead for Asset {
-    type Args = i128;
+    type Args<'a> = i128;
 
     fn read_options<R: Read + Seek>(
         reader: &mut R,
-        options: &ReadOptions,
-        type_hash: Self::Args,
+        endian: Endian,
+        type_hash: Self::Args<'_>,
     ) -> BinResult<Self> {
         match type_hash {
-            ASSET_BUNDLE_HASH => AssetBundle::read_options(reader, options, ()).map(Self::Bundle),
-            TEXT_ASSET_HASH => TextAsset::read_options(reader, options, ()).map(Self::Text),
-            MONO_SCRIPT_HASH => MonoScript::read_options(reader, options, ()).map(Self::Script),
+            ASSET_BUNDLE_HASH => AssetBundle::read_options(reader, endian, ()).map(Self::Bundle),
+            TEXT_ASSET_HASH => TextAsset::read_options(reader, endian, ()).map(Self::Text),
+            MONO_SCRIPT_HASH => MonoScript::read_options(reader, endian, ()).map(Self::Script),
             TERRAIN_MONO_BEHAVIOR_TYPE_HASH => {
-                MonoBehavior::<TerrainData>::read_options(reader, options, ()).map(Self::Terrain)
+                MonoBehavior::<TerrainData>::read_options(reader, endian, ()).map(Self::Terrain)
             }
-            TEXTURE_2D_HASH => Texture2D::read_options(reader, options, ()).map(Self::Texture2D),
+            TEXTURE_2D_HASH => Texture2D::read_options(reader, endian, ()).map(Self::Texture2D),
             SPRITE_ATLAS_HASH => {
-                SpriteAtlas::read_options(reader, options, ()).map(Self::SpriteAtlas)
+                SpriteAtlas::read_options(reader, endian, ()).map(Self::SpriteAtlas)
             }
             EMPTY_MONO_BEHAVIOR_HASH => {
-                MonoBehavior::<()>::read_options(reader, options, ()).map(Self::EmptyMonoBehavior)
+                MonoBehavior::<()>::read_options(reader, endian, ()).map(Self::EmptyMonoBehavior)
             }
-            SPRITE_HASH => Sprite::read_options(reader, options, ()).map(Self::Sprite),
-            GAME_OBJECT_HASH => GameObject::read_options(reader, options, ()).map(Self::GameObject),
-            ANIMATOR_HASH => Animator::read_options(reader, options, ()).map(Self::Animator),
-            MESH_HASH => Mesh::read_options(reader, options, ()).map(Self::Mesh),
-            AVATAR_HASH => Avatar::read_options(reader, options, ()).map(Self::Avatar),
-            TRANSFORM_HASH => Transform::read_options(reader, options, ()).map(Self::Transform),
-            MATERIAL_HASH => Material::read_options(reader, options, ()).map(Self::Material),
-            SKINNED_MESH_RENDERER_HASH => SkinnedMeshRenderer::read_options(reader, options, ())
-                .map(Self::SkinnedMeshRenderer),
+            SPRITE_HASH => Sprite::read_options(reader, endian, ()).map(Self::Sprite),
+            GAME_OBJECT_HASH => GameObject::read_options(reader, endian, ()).map(Self::GameObject),
+            ANIMATOR_HASH => Animator::read_options(reader, endian, ()).map(Self::Animator),
+            MESH_HASH => Mesh::read_options(reader, endian, ()).map(Self::Mesh),
+            AVATAR_HASH => Avatar::read_options(reader, endian, ()).map(Self::Avatar),
+            TRANSFORM_HASH => Transform::read_options(reader, endian, ()).map(Self::Transform),
+            MATERIAL_HASH => Material::read_options(reader, endian, ()).map(Self::Material),
+            SKINNED_MESH_RENDERER_HASH => {
+                SkinnedMeshRenderer::read_options(reader, endian, ()).map(Self::SkinnedMeshRenderer)
+            }
             SPRING_JOB_MONO_BEHAVIOR_HASH => {
-                MonoBehavior::<SpringJob>::read_options(reader, options, ()).map(Self::SpringJob)
+                MonoBehavior::<SpringJob>::read_options(reader, endian, ()).map(Self::SpringJob)
             }
             SPRING_BONE_MONO_BEHAVIOR_HASH => {
-                MonoBehavior::<SpringBone>::read_options(reader, options, ()).map(Self::SpringBone)
+                MonoBehavior::<SpringBone>::read_options(reader, endian, ()).map(Self::SpringBone)
             }
             _ => Err(binrw::Error::NoVariantMatch {
                 pos: reader.stream_position()?,
@@ -521,21 +520,61 @@ impl ReadEndian for Asset {
     const ENDIAN: EndianKind = EndianKind::Endian(Endian::Little);
 }
 
-#[binrw]
 #[derive(Debug)]
-pub struct UArray<T: BinRead<Args = ()> + BinWrite<Args = ()> + std::fmt::Debug> {
-    #[brw(align_before = 4)]
-    #[br(temp)]
-    #[bw(calc = items.len() as u32)]
-    count: u32,
-
-    #[br(count = count)]
+pub struct UArray<T: std::fmt::Debug> {
     pub items: Vec<T>,
+}
+
+impl<'b, T> BinRead for UArray<T>
+where
+    T: BinRead<Args<'b> = ()> + std::fmt::Debug,
+{
+    type Args<'a> = ();
+
+    fn read_options<R: Read + Seek>(
+        reader: &mut R,
+        endian: Endian,
+        _: Self::Args<'_>,
+    ) -> BinResult<Self> {
+        let pos = reader.stream_position()? as i64;
+        if pos % 4 != 0 {
+            reader.seek(SeekFrom::Current(4 - pos % 4))?;
+        }
+        let count: u32 = BinRead::read_options(reader, endian, ())?;
+        let mut items = vec![];
+        for _ in 0..count {
+            items.push(BinRead::read_options(reader, endian, ())?);
+        }
+        Ok(Self { items })
+    }
+}
+
+impl<'b, T> BinWrite for UArray<T>
+where
+    T: BinWrite<Args<'b> = ()> + std::fmt::Debug,
+{
+    type Args<'a> = ();
+
+    fn write_options<W: Write + Seek>(
+        &self,
+        writer: &mut W,
+        endian: Endian,
+        _: Self::Args<'_>,
+    ) -> BinResult<()> {
+        while writer.stream_position()? % 4 != 0 {
+            writer.write_u8(0)?;
+        }
+        (self.items.len() as u32).write_options(writer, endian, ())?;
+        for item in &self.items {
+            item.write_options(writer, endian, ())?;
+        }
+        Ok(())
+    }
 }
 
 impl<T> Default for UArray<T>
 where
-    T: BinRead<Args = ()> + BinWrite<Args = ()> + std::fmt::Debug + Default,
+    T: std::fmt::Debug + Default,
 {
     fn default() -> Self {
         Self {
@@ -546,7 +585,7 @@ where
 
 impl<T> Deref for UArray<T>
 where
-    T: BinRead<Args = ()> + BinWrite<Args = ()> + std::fmt::Debug,
+    T: std::fmt::Debug,
 {
     type Target = Vec<T>;
 
@@ -557,7 +596,7 @@ where
 
 impl<T> DerefMut for UArray<T>
 where
-    T: BinRead<Args = ()> + BinWrite<Args = ()> + std::fmt::Debug,
+    T: std::fmt::Debug,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.items
@@ -594,18 +633,18 @@ impl DerefMut for UString {
 }
 
 impl BinRead for UString {
-    type Args = ();
+    type Args<'a> = ();
 
     fn read_options<R: Read + Seek>(
         reader: &mut R,
-        options: &ReadOptions,
-        _: Self::Args,
+        endian: Endian,
+        _: Self::Args<'_>,
     ) -> BinResult<Self> {
         let position = reader.stream_position()? as i64;
         if position % 4 != 0 {
             reader.seek(SeekFrom::Current(4 - position % 4))?;
         }
-        let count: u32 = <_>::read_options(reader, options, ())?;
+        let count: u32 = <_>::read_options(reader, endian, ())?;
         let mut buffer = vec![0; count as usize];
         reader.read_exact(&mut buffer)?;
         let (cow, _) = UTF_8.decode_with_bom_removal(&buffer);
@@ -614,16 +653,16 @@ impl BinRead for UString {
 }
 
 impl BinWrite for UString {
-    type Args = ();
+    type Args<'a> = ();
 
     fn write_options<W: Write + Seek>(
         &self,
         writer: &mut W,
-        options: &WriteOptions,
-        _: Self::Args,
+        endian: Endian,
+        _: Self::Args<'_>,
     ) -> BinResult<()> {
         write_padding(writer, 4)?;
-        (self.len() as u32).write_options(writer, options, ())?;
+        (self.len() as u32).write_options(writer, endian, ())?;
         writer.write_all(self.0.as_bytes())?;
         Ok(())
     }
@@ -721,20 +760,67 @@ pub struct MonoScript {
     pub assembly_name: UString,
 }
 
-#[binrw]
 #[derive(Debug)]
-pub struct MonoBehavior<T: BinRead<Args = ()> + BinWrite<Args = ()> + std::fmt::Debug> {
+pub struct MonoBehavior<T: std::fmt::Debug> {
     pub game_object: PPtr,
-    #[brw(align_after = 4)]
+    // #[brw(align_after = 4)]
     pub enabled: u8,
     pub script: PPtr,
     pub name: UString,
     pub data: T,
 }
 
+impl<'b, T> BinRead for MonoBehavior<T>
+where
+    T: BinRead<Args<'b> = ()> + std::fmt::Debug,
+{
+    type Args<'a> = ();
+
+    fn read_options<R: Read + Seek>(
+        reader: &mut R,
+        endian: Endian,
+        _: Self::Args<'_>,
+    ) -> BinResult<Self> {
+        let game_object: PPtr = BinRead::read_options(reader, endian, ())?;
+        let enabled: u8 = BinRead::read_options(reader, endian, ())?;
+        reader.seek(SeekFrom::Current(3))?;
+        Ok(Self {
+            game_object,
+            enabled,
+            script: BinRead::read_options(reader, endian, ())?,
+            name: BinRead::read_options(reader, endian, ())?,
+            data: BinRead::read_options(reader, endian, ())?,
+        })
+    }
+}
+
+impl<'b, T> BinWrite for MonoBehavior<T>
+where
+    T: BinWrite<Args<'b> = ()> + std::fmt::Debug,
+{
+    type Args<'a> = ();
+
+    fn write_options<W: Write + Seek>(
+        &self,
+        writer: &mut W,
+        endian: Endian,
+        _: Self::Args<'_>,
+    ) -> BinResult<()> {
+        self.game_object.write_options(writer, endian, ())?;
+        self.enabled.write_options(writer, endian, ())?;
+        writer.write_u8(0)?;
+        writer.write_u8(0)?;
+        writer.write_u8(0)?;
+        self.script.write_options(writer, endian, ())?;
+        self.name.write_options(writer, endian, ())?;
+        self.data.write_options(writer, endian, ())?;
+        Ok(())
+    }
+}
+
 impl<T> Default for MonoBehavior<T>
 where
-    T: BinRead<Args = ()> + BinWrite<Args = ()> + std::fmt::Debug + Default,
+    T: std::fmt::Debug + Default,
 {
     fn default() -> Self {
         Self {

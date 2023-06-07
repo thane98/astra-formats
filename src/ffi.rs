@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 
 use anyhow::Result;
-use image::DynamicImage;
+use image::{DynamicImage, GenericImageView, RgbaImage};
 use indexmap::IndexMap;
 
 use crate::{AtlasBundle, MessageBundle, SpriteAtlasWrapper, TextBundle};
@@ -73,6 +73,7 @@ pub unsafe extern "C" fn text_bundle_put_string(
 pub unsafe extern "C" fn text_bundle_free(_: Box<TextBundle>) {}
 
 #[no_mangle]
+#[cfg(feature = "msbt_script")]
 pub unsafe extern "C" fn message_bundle_open(path: *const i8) -> FfiResult<Box<MessageBundle>> {
     let path = CStr::from_ptr(path).to_string_lossy().to_string();
     MessageBundle::load(path).map(Box::new).into()
@@ -87,6 +88,15 @@ pub unsafe extern "C" fn message_bundle_take_script(
         .take_script()
         .map(|s| CString::new(s).unwrap().into_raw())
         .into()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn message_bundle_parse(
+    data: *const u8,
+    len: usize,
+) -> FfiResult<Box<MessageBundle>> {
+    let slice = std::slice::from_raw_parts(data, len);
+    MessageBundle::from_slice(slice).map(Box::new).into()
 }
 
 #[no_mangle]
@@ -114,6 +124,16 @@ pub unsafe extern "C" fn message_bundle_put_script(
 ) -> FfiResult<()> {
     let script = CStr::from_ptr(script).to_string_lossy().to_string();
     bundle.replace_script(&script).into()
+}
+
+#[no_mangle]
+#[cfg(feature = "msbt_script")]
+pub unsafe extern "C" fn message_bundle_save(
+    bundle: &mut MessageBundle,
+    path: *const i8,
+) -> FfiResult<()> {
+    let path = CStr::from_ptr(path).to_string_lossy().to_string();
+    bundle.save(path).into()
 }
 
 #[no_mangle]
@@ -189,6 +209,32 @@ pub unsafe extern "C" fn sprite_atlas_get_sprite(
 ) -> FfiImage {
     let key = CStr::from_ptr(key).to_string_lossy();
     atlas.get_sprite(&key).into()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sprite_atlas_get_unit_sprite(
+    palette: &SpriteAtlasWrapper,
+    index: &SpriteAtlasWrapper,
+    palette_key: *const i8,
+    index_key: *const i8,
+) -> FfiImage {
+    let palette_key = CStr::from_ptr(palette_key).to_string_lossy();
+    let index_key = CStr::from_ptr(index_key).to_string_lossy();
+    let palette = palette.get_sprite(&palette_key);
+    let index = index.get_sprite(&index_key);
+    match (palette, index) {
+        (Some(palette), Some(index)) => Some(DynamicImage::ImageRgba8(RgbaImage::from_fn(
+            index.width(),
+            index.height(),
+            |x, y| {
+                palette
+                    .get_pixel(index.get_pixel(x, y).0[0] as u32 * 2, 0)
+                    .to_owned()
+            },
+        )))
+        .into(),
+        _ => None.into(),
+    }
 }
 
 #[no_mangle]
