@@ -19,7 +19,7 @@ pub use bundle::*;
 pub use msbt::MessageMap;
 pub use sprite_atlas::SpriteAtlasWrapper;
 
-// #[cfg(feature = "ffi")]
+#[cfg(feature = "ffi")]
 mod ffi;
 
 #[cfg(feature = "msbt_script")]

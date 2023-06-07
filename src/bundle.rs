@@ -10,9 +10,14 @@ use lzma_rs::decompress::UnpackedSize;
 
 use crate::sprite_atlas::SpriteAtlasWrapper;
 use crate::{
+    Asset, AssetFile, MessageMap, MonoBehavior, Sprite, SpriteAtlas, TerrainData, TextAsset,
+    Texture2D,
+};
+
+#[cfg(feature = "msbt_script")]
+use crate::{
     pack_astra_script, pack_msbt_entry, parse_astra_script_entry, parse_msbt_entry,
-    parse_msbt_script, Asset, AssetFile, MessageMap, MonoBehavior, Sprite, SpriteAtlas,
-    TerrainData, TextAsset, Texture2D,
+    parse_msbt_script,
 };
 
 #[derive(Debug)]

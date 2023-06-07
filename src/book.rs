@@ -212,17 +212,19 @@ where
 
 impl<T> FromSheetParamAttribute for Vec<T>
 where
-    T: FromStr,
+    T: FromStr + Default,
     <T as FromStr>::Err: std::fmt::Debug,
 {
     fn from_sheet_param_attribute(value: String) -> Result<Self> {
         let mut items = vec![];
         for part in value.split(';').filter(|p| !p.is_empty()) {
-            items.push(T::from_str(part).unwrap());
+            items.push(T::from_str(part).map_err(|err| anyhow!("{:?}", err))?);
         }
         Ok(items)
     }
 }
+
+
 
 impl FromSheetParamAttribute for String {
     fn from_sheet_param_attribute(value: String) -> Result<Self> {
@@ -334,3 +336,35 @@ impl ToSheetParamAttribute for bool {
         self.to_string()
     }
 }
+
+macro_rules! sheet_number {
+    ($target:ty) => {
+        impl FromSheetParamAttribute for $target {
+            fn from_sheet_param_attribute(value: String) -> Result<Self> {
+                let value: $target = value.parse()?;
+                Ok(value)
+            }
+        }
+
+        impl ToSheetParamAttribute for $target {
+            fn to_sheet_param_attribute(&self) -> String {
+                self.to_string()
+            }
+        }
+    }
+}
+
+sheet_number!(u8);
+sheet_number!(i8);
+sheet_number!(u16);
+sheet_number!(i16);
+sheet_number!(u32);
+sheet_number!(i32);
+sheet_number!(u64);
+sheet_number!(i64);
+sheet_number!(u128);
+sheet_number!(i128);
+sheet_number!(usize);
+sheet_number!(isize);
+sheet_number!(f32);
+sheet_number!(f64);
