@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::path::Path;
 use std::str::FromStr;
 
@@ -89,10 +90,43 @@ pub trait PublicArrayEntry {
     fn key_identifier() -> &'static str;
 }
 
+pub trait AstraBook: Sized {
+    fn load<PathTy: AsRef<Path>>(path: PathTy) -> Result<Self>;
+    fn save<PathTy: AsRef<std::path::Path>>(&self, path: PathTy) -> Result<()>;
+    fn from_string(contents: impl AsRef<str>) -> Result<Self>;
+    fn to_string(&self) -> Result<String>;
+}
+
 pub struct Sheet<T> {
     pub name: String,
     pub header: SheetHeader,
     pub data: T,
+}
+
+impl<T> Clone for Sheet<T>
+where
+    T: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            header: self.header.clone(),
+            data: self.data.clone(),
+        }
+    }
+}
+
+impl<T> Debug for Sheet<T>
+where
+    T: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Sheet")
+            .field("name", &self.name)
+            .field("header", &self.header)
+            .field("data", &self.data)
+            .finish()
+    }
 }
 
 impl<T> TryFrom<RawSheet> for Sheet<T>
@@ -224,8 +258,6 @@ where
     }
 }
 
-
-
 impl FromSheetParamAttribute for String {
     fn from_sheet_param_attribute(value: String) -> Result<Self> {
         Ok(value)
@@ -351,7 +383,7 @@ macro_rules! sheet_number {
                 self.to_string()
             }
         }
-    }
+    };
 }
 
 sheet_number!(u8);
