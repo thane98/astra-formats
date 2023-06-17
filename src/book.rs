@@ -23,7 +23,18 @@ impl Book {
     }
 
     pub fn from_string(contents: &str) -> Result<Self> {
-        let book: Self = quick_xml::de::from_str(contents)?;
+        let mut book: Self = quick_xml::de::from_str(contents)?;
+        
+        // quick-xml allows newlines in attributes and will automatically unescape
+        // a newline sequence when it encounters it.
+        // We replace this with a space since there isn't a great way to prevent quick-xml
+        // from writing a newline otherwise.
+        for sheet in &mut book.sheets {
+            for param in &mut sheet.header.params {
+                param.name = param.name.replace('\n', " ");
+            }
+        }
+
         Ok(book)
     }
 
