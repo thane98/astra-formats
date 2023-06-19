@@ -238,7 +238,7 @@ fn serialize_lbl1(messages: &IndexMap<String, Vec<u16>>, num_buckets: usize) -> 
 
     // Finally, stitch together the section.
     let length_without_header = bucket_info.len() * 8 + raw_text.len();
-    let padded_length = align(length_without_header as u64 + 0x10, 16);
+    let padded_length = align(length_without_header as u64 + 0x14, 16);
     let mut buffer = vec![0u8; padded_length as usize];
     let mut cursor = Cursor::new(buffer.as_mut_slice());
     write_utf8(&mut cursor, "LBL1")?;

@@ -583,6 +583,12 @@ where
     }
 }
 
+impl<T> Clone for UArray<T> where T: std::fmt::Debug + Clone {
+    fn clone(&self) -> Self {
+        Self { items: self.items.clone() }
+    }
+}
+
 impl<T> Deref for UArray<T>
 where
     T: std::fmt::Debug,
@@ -686,7 +692,7 @@ pub struct AssetBundle {
 }
 
 #[binrw]
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct PPtr {
     #[brw(align_before = 4)]
     pub file_id: i32,
@@ -763,7 +769,6 @@ pub struct MonoScript {
 #[derive(Debug)]
 pub struct MonoBehavior<T: std::fmt::Debug> {
     pub game_object: PPtr,
-    // #[brw(align_after = 4)]
     pub enabled: u8,
     pub script: PPtr,
     pub name: UString,
@@ -833,9 +838,25 @@ where
     }
 }
 
+impl<T> Clone for MonoBehavior<T>
+where
+    T: std::fmt::Debug + Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            game_object: self.game_object.clone(),
+            enabled: self.enabled.clone(),
+            script: self.script.clone(),
+            name: self.name.clone(),
+            data: self.data.clone(),
+        }
+    }
+}
+
 #[binrw]
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct TerrainData {
+    #[brw(align_before = 4)]
     pub x: i32,
     pub z: i32,
     pub width: i32,
@@ -845,23 +866,25 @@ pub struct TerrainData {
     pub terrains: UArray<UString>,
 }
 
-#[binrw(align_after = 4)]
-#[derive(Debug, Default)]
+#[binrw]
+#[derive(Debug, Default, Clone)]
 pub struct TerrainLayerData {
-    pub x: u8,
-    pub y: u8,
-    pub w: u8,
-    pub h: u8,
+    #[brw(align_before = 4)]
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
     pub group: i32,
-    pub attr: UArray<UString>,
+    pub attr: UString,
 }
 
-#[binrw(align_after = 4)]
-#[derive(Debug, Default)]
+#[binrw]
+#[derive(Debug, Default, Clone)]
 pub struct TerrainOverlapData {
-    pub x: u8,
-    pub y: u8,
-    pub attr: UArray<UString>,
+    #[brw(align_before = 4)]
+    pub x: i32,
+    pub y: i32,
+    pub attr: UString,
 }
 
 #[binrw]
