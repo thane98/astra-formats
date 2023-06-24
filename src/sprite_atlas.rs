@@ -5,16 +5,16 @@ use image::DynamicImage;
 use crate::{RenderDataKey, Sprite, SpriteAtlas, SpriteAtlasData};
 
 pub struct SpriteAtlasWrapper {
-    pub texture: DynamicImage,
+    pub textures: HashMap<i64, DynamicImage>,
     render_data: HashMap<RenderDataKey, SpriteAtlasData>,
     sprites: HashMap<String, Sprite>,
 }
 
 impl SpriteAtlasWrapper {
-    pub fn new(texture: DynamicImage, atlas: SpriteAtlas, sprites: Vec<Sprite>) -> Self {
+    pub fn new(textures: HashMap<i64, DynamicImage>, atlas: SpriteAtlas, sprites: Vec<Sprite>) -> Self {
         // TODO: Validate that everything uses the supported packing flags
         Self {
-            texture,
+            textures,
             render_data: atlas.render_data_map.items.into_iter().collect(),
             sprites: sprites
                 .into_iter()
@@ -26,9 +26,10 @@ impl SpriteAtlasWrapper {
     pub fn get_sprite(&self, name: &str) -> Option<DynamicImage> {
         let sprite = self.sprites.get(name)?;
         let render_data = self.render_data.get(&sprite.render_data_key)?;
+        let texture = self.textures.get(&render_data.texture.path_id)?;
         let rect = &render_data.texture_rect;
         Some(
-            self.texture
+            texture
                 .crop_imm(
                     rect.x as u32,
                     rect.y as u32,

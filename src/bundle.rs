@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::{BufReader, Cursor, Read, Seek, Write};
 use std::path::Path;
 
@@ -457,29 +458,44 @@ impl AtlasBundle {
         if let (Some(BundleFile::Assets(asset_file)), Some(BundleFile::Raw(image_data))) =
             (assets_file, resource_file)
         {
-            let (texture, atlas, sprites) = extract_atlas_assets(asset_file)?;
-            let texture_image = crate::texture::decode(&texture, &image_data)?;
-            Ok(SpriteAtlasWrapper::new(texture_image, atlas, sprites))
+            let assets = extract_atlas_assets(asset_file)?;
+            let mut textures = HashMap::new();
+            let mut slice_start = 0;
+            for (id, texture) in assets.textures {
+                textures.insert(id as i64, crate::texture::decode(&texture, &image_data[slice_start..])?);
+                slice_start += texture.width as usize * texture.height as usize;
+            }
+            Ok(SpriteAtlasWrapper::new(textures, assets.atlas, assets.sprites))
         } else {
             bail!("could not identify asset and texture files in bundle")
         }
     }
 }
 
-fn extract_atlas_assets(asset_file: AssetFile) -> Result<(Texture2D, SpriteAtlas, Vec<Sprite>)> {
+struct AtlasAssets {
+    textures: Vec<(u64, Texture2D)>,
+    sprites: Vec<Sprite>,
+    atlas: SpriteAtlas,
+}
+
+fn extract_atlas_assets(asset_file: AssetFile) -> Result<AtlasAssets> {
     let mut sprites = vec![];
-    let mut texture = None;
+    let mut textures = vec![];
     let mut atlas = None;
     for asset in asset_file.assets {
         match asset {
-            Asset::Texture2D(asset) => texture = Some(asset),
+            Asset::Texture2D(asset, id) => textures.push((id, asset)),
             Asset::SpriteAtlas(asset) => atlas = Some(asset),
             Asset::Sprite(asset) => sprites.push(asset),
             _ => {}
         }
     }
-    if let (Some(texture), Some(atlas)) = (texture, atlas) {
-        Ok((texture, atlas, sprites))
+    if let Some(atlas) = atlas {
+        Ok(AtlasAssets {
+            textures,
+            sprites,
+            atlas,
+        })
     } else {
         bail!("could not extract assets required to build sprite atlas")
     }

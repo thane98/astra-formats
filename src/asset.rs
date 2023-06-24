@@ -183,7 +183,7 @@ fn read_assets<R: Read + Seek>(
     for obj in sorted_objects {
         let ty = &types[obj.type_id as usize]; // TODO: Bounds check.
         reader.seek(SeekFrom::Start(data_offset + obj.offset))?;
-        assets.push(Asset::read_options(reader, endian, ty.type_hash)?);
+        assets.push(Asset::read_options(reader, endian, (ty.type_hash, obj.path_id))?);
     }
     Ok(assets)
 }
@@ -432,7 +432,7 @@ pub enum Asset {
     Text(TextAsset),
     Script(MonoScript),
     Terrain(MonoBehavior<TerrainData>),
-    Texture2D(Texture2D),
+    Texture2D(Texture2D, u64),
     SpriteAtlas(SpriteAtlas),
     Sprite(Sprite),
     EmptyMonoBehavior(MonoBehavior<()>),
@@ -454,7 +454,7 @@ impl Asset {
             Asset::Text(_) => TEXT_ASSET_HASH,
             Asset::Script(_) => MONO_SCRIPT_HASH,
             Asset::Terrain(_) => TERRAIN_MONO_BEHAVIOR_TYPE_HASH,
-            Asset::Texture2D(_) => TEXTURE_2D_HASH,
+            Asset::Texture2D(_, _) => TEXTURE_2D_HASH,
             Asset::SpriteAtlas(_) => SPRITE_ATLAS_HASH,
             Asset::Sprite(_) => SPRITE_HASH,
             Asset::EmptyMonoBehavior(_) => EMPTY_MONO_BEHAVIOR_HASH,
@@ -472,13 +472,14 @@ impl Asset {
 }
 
 impl BinRead for Asset {
-    type Args<'a> = i128;
+    type Args<'a> = (i128, u64);
 
     fn read_options<R: Read + Seek>(
         reader: &mut R,
         endian: Endian,
-        type_hash: Self::Args<'_>,
+        args: Self::Args<'_>,
     ) -> BinResult<Self> {
+        let (type_hash, pptr) = args;
         match type_hash {
             ASSET_BUNDLE_HASH => AssetBundle::read_options(reader, endian, ()).map(Self::Bundle),
             TEXT_ASSET_HASH => TextAsset::read_options(reader, endian, ()).map(Self::Text),
@@ -486,7 +487,7 @@ impl BinRead for Asset {
             TERRAIN_MONO_BEHAVIOR_TYPE_HASH => {
                 MonoBehavior::<TerrainData>::read_options(reader, endian, ()).map(Self::Terrain)
             }
-            TEXTURE_2D_HASH => Texture2D::read_options(reader, endian, ()).map(Self::Texture2D),
+            TEXTURE_2D_HASH => Texture2D::read_options(reader, endian, ()).map(|texture| Self::Texture2D(texture, pptr)),
             SPRITE_ATLAS_HASH => {
                 SpriteAtlas::read_options(reader, endian, ()).map(Self::SpriteAtlas)
             }
