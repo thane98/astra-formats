@@ -101,6 +101,10 @@ pub trait PublicArrayEntry {
     fn key_identifier() -> &'static str;
 }
 
+pub trait UniqueBookEntry {
+    fn get_id(&self) -> &str;
+}
+
 pub trait AstraBook: Sized {
     fn load<PathTy: AsRef<Path>>(path: PathTy) -> Result<Self>;
     fn save<PathTy: AsRef<std::path::Path>>(&self, path: PathTy) -> Result<()>;
@@ -202,6 +206,18 @@ where
     }
 }
 
+impl<T> FromSheetData for IndexMap<String, T> where T: FromSheetDataParam + UniqueBookEntry {
+    fn from_sheet_data(sheet: SheetData) -> Result<Self> {
+        let mut items = IndexMap::new();
+        for row in sheet.params {
+            let item = T::from_sheet_data_param(row.values)?;
+            let key = item.get_id();
+            items.insert(key.to_string(), item);
+        }
+        Ok(items)
+    }
+}
+
 impl<T> FromSheetData for IndexMap<String, Vec<T>>
 where
     T: FromSheetDataParam + PublicArrayEntry,
@@ -293,6 +309,16 @@ where
     fn to_sheet_data(&self, _header: &SheetHeader) -> SheetData {
         let mut params = vec![];
         for row in self {
+            params.push(row.to_sheet_data_param());
+        }
+        SheetData { params }
+    }
+}
+
+impl<T> ToSheetData for IndexMap<String, T> where T: ToSheetDataParam {
+    fn to_sheet_data(&self, _header: &SheetHeader) -> SheetData {
+        let mut params = vec![];
+        for row in self.values() {
             params.push(row.to_sheet_data_param());
         }
         SheetData { params }
