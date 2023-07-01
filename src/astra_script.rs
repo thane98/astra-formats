@@ -89,6 +89,15 @@ impl Display for ParseError {
     }
 }
 
+impl From<ParseError> for Vec<ParseError> {
+    fn from(value: ParseError) -> Self {
+        match value {
+            ParseError::Aggregated(errors) => errors,
+            _ => vec![value]
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, Logos, PartialEq, Eq)]
 enum Token {
     #[token("(")]

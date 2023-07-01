@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::io::{BufReader, Cursor, Read, Seek, Write};
 use std::path::Path;
 
@@ -9,11 +8,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use lzma_rs::decompress::UnpackedSize;
 
-use crate::sprite_atlas::SpriteAtlasWrapper;
-use crate::{
-    Asset, AssetFile, MessageMap, MonoBehavior, Sprite, SpriteAtlas, TerrainData, TextAsset,
-    Texture2D,
-};
+use crate::{Asset, AssetFile, MessageMap, MonoBehavior, TerrainData, TextAsset};
 
 #[cfg(feature = "msbt_script")]
 use crate::{
@@ -23,7 +18,7 @@ use crate::{
 
 #[derive(Debug)]
 pub struct Bundle {
-    files: IndexMap<String, BundleFile>,
+    pub(crate) files: IndexMap<String, BundleFile>,
 }
 
 impl Bundle {
@@ -437,67 +432,6 @@ impl TerrainBundle {
                 })
             })
             .ok_or_else(|| anyhow!("bundle does not contain any terrain assets"))
-    }
-}
-
-#[derive(Debug)]
-pub struct AtlasBundle(Bundle);
-
-impl AtlasBundle {
-    pub fn load<T: AsRef<Path>>(path: T) -> Result<Self> {
-        Bundle::load(path).map(Self)
-    }
-
-    pub fn from_slice(raw_bundle: &[u8]) -> Result<Self> {
-        Bundle::from_slice(raw_bundle).map(Self)
-    }
-
-    pub fn extract_data(mut self) -> Result<SpriteAtlasWrapper> {
-        let resource_file = self.0.files.pop().map(|v| v.1);
-        let assets_file = self.0.files.pop().map(|v| v.1);
-        if let (Some(BundleFile::Assets(asset_file)), Some(BundleFile::Raw(image_data))) =
-            (assets_file, resource_file)
-        {
-            let assets = extract_atlas_assets(asset_file)?;
-            let mut textures = HashMap::new();
-            let mut slice_start = 0;
-            for (id, texture) in assets.textures {
-                textures.insert(id as i64, crate::texture::decode(&texture, &image_data[slice_start..])?);
-                slice_start += texture.width as usize * texture.height as usize;
-            }
-            Ok(SpriteAtlasWrapper::new(textures, assets.atlas, assets.sprites))
-        } else {
-            bail!("could not identify asset and texture files in bundle")
-        }
-    }
-}
-
-struct AtlasAssets {
-    textures: Vec<(u64, Texture2D)>,
-    sprites: Vec<Sprite>,
-    atlas: SpriteAtlas,
-}
-
-fn extract_atlas_assets(asset_file: AssetFile) -> Result<AtlasAssets> {
-    let mut sprites = vec![];
-    let mut textures = vec![];
-    let mut atlas = None;
-    for asset in asset_file.assets {
-        match asset {
-            Asset::Texture2D(asset, id) => textures.push((id, asset)),
-            Asset::SpriteAtlas(asset) => atlas = Some(asset),
-            Asset::Sprite(asset) => sprites.push(asset),
-            _ => {}
-        }
-    }
-    if let Some(atlas) = atlas {
-        Ok(AtlasAssets {
-            textures,
-            sprites,
-            atlas,
-        })
-    } else {
-        bail!("could not extract assets required to build sprite atlas")
     }
 }
 
