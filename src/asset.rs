@@ -183,7 +183,11 @@ fn read_assets<R: Read + Seek>(
     for obj in sorted_objects {
         let ty = &types[obj.type_id as usize]; // TODO: Bounds check.
         reader.seek(SeekFrom::Start(data_offset + obj.offset))?;
-        assets.push(Asset::read_options(reader, endian, (ty.type_hash, obj.path_id))?);
+        assets.push(Asset::read_options(
+            reader,
+            endian,
+            (ty.type_hash, obj.path_id),
+        )?);
     }
     Ok(assets)
 }
@@ -487,7 +491,8 @@ impl BinRead for Asset {
             TERRAIN_MONO_BEHAVIOR_TYPE_HASH => {
                 MonoBehavior::<TerrainData>::read_options(reader, endian, ()).map(Self::Terrain)
             }
-            TEXTURE_2D_HASH => Texture2D::read_options(reader, endian, ()).map(|texture| Self::Texture2D(texture, pptr)),
+            TEXTURE_2D_HASH => Texture2D::read_options(reader, endian, ())
+                .map(|texture| Self::Texture2D(texture, pptr)),
             SPRITE_ATLAS_HASH => {
                 SpriteAtlas::read_options(reader, endian, ()).map(Self::SpriteAtlas)
             }
@@ -584,9 +589,14 @@ where
     }
 }
 
-impl<T> Clone for UArray<T> where T: std::fmt::Debug + Clone {
+impl<T> Clone for UArray<T>
+where
+    T: std::fmt::Debug + Clone,
+{
     fn clone(&self) -> Self {
-        Self { items: self.items.clone() }
+        Self {
+            items: self.items.clone(),
+        }
     }
 }
 
