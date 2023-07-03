@@ -12,6 +12,8 @@ use itertools::{izip, Itertools};
 const ASSET_BUNDLE_HASH: i128 = -138975531846078832632480790701341156713;
 const TEXT_ASSET_HASH: i128 = -73723634408196252373272760413176173752;
 const MESH_HASH: i128 = -72083215265324370365192905875055095371;
+const MESH_FILTER_HASH: i128 = 161675840667827063370573699974811358877;
+const MESH_RENDERER_HASH: i128 = -72208694526585686254499184803611500559;
 const AVATAR_HASH: i128 = -125274292396291140701441925783063757818;
 const MATERIAL_HASH: i128 = 38580764854673472068260433708032579683;
 const TRANSFORM_HASH: i128 = 113257848714874300609633886051190185078;
@@ -443,6 +445,8 @@ pub enum Asset {
     GameObject(GameObject),
     Animator(Animator),
     Mesh(Mesh),
+    MeshFilter(MeshFilter),
+    MeshRenderer(MeshRenderer),
     Avatar(Avatar),
     Transform(Transform),
     Material(Material),
@@ -464,7 +468,9 @@ impl Asset {
             Asset::EmptyMonoBehavior(_) => EMPTY_MONO_BEHAVIOR_HASH,
             Asset::GameObject(_) => GAME_OBJECT_HASH,
             Asset::Animator(_) => ANIMATOR_HASH,
+            Asset::MeshFilter(_) => MESH_FILTER_HASH,
             Asset::Mesh(_) => MESH_HASH,
+            Asset::MeshRenderer(_) => MESH_RENDERER_HASH,
             Asset::Avatar(_) => AVATAR_HASH,
             Asset::Transform(_) => TRANSFORM_HASH,
             Asset::Material(_) => MATERIAL_HASH,
@@ -503,6 +509,8 @@ impl BinRead for Asset {
             GAME_OBJECT_HASH => GameObject::read_options(reader, endian, ()).map(Self::GameObject),
             ANIMATOR_HASH => Animator::read_options(reader, endian, ()).map(Self::Animator),
             MESH_HASH => Mesh::read_options(reader, endian, ()).map(Self::Mesh),
+            MESH_FILTER_HASH => MeshFilter::read_options(reader, endian, ()).map(Self::MeshFilter),
+            MESH_RENDERER_HASH => MeshRenderer::read_options(reader, endian, ()).map(Self::MeshRenderer),
             AVATAR_HASH => Avatar::read_options(reader, endian, ()).map(Self::Avatar),
             TRANSFORM_HASH => Transform::read_options(reader, endian, ()).map(Self::Transform),
             MATERIAL_HASH => Material::read_options(reader, endian, ()).map(Self::Material),
@@ -1529,6 +1537,52 @@ pub struct ColorRGBA {
     pub g: f32,
     pub b: f32,
     pub a: f32,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct MeshFilter {
+    pub game_object: PPtr,
+    pub mesh: PPtr,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct MeshRenderer {
+    pub game_object: PPtr,
+    pub enabled: u8,
+    pub cast_shadows: u8,
+    pub receive_shadows: u8,
+    pub dynamic_occludee: u8,
+    pub motion_vectors: u8,
+    pub light_probe_usage: u8,
+    pub reflection_probe_usage: u8,
+    pub ray_tracing_mode: u8,
+    pub ray_tracing_procedural: u8,
+    #[brw(align_before = 4)]
+    pub rendering_layer_mask: u32,
+    pub renderer_priority: u32,
+    pub lightmap_index: u16,
+    pub lightmap_index_dynamic: u16,
+    pub lightmap_tiling_offset: Vector4f,
+    pub lightmap_tiling_offset_dynamic: Vector4f,
+    pub materials: UArray<PPtr>,
+    pub static_batch_info: StaticBatchInfo,
+    pub static_batch_root: PPtr,
+    pub probe_anchor: PPtr,
+    pub light_probe_volume_override: PPtr,
+    pub sorting_layer_id: u32,
+    pub sorting_layer: i16,
+    pub sorting_order: i16,
+    pub additional_vertex_streams: PPtr,
+    pub enlighten_vertex_stream: PPtr,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct StaticBatchInfo {
+    pub first_sub_mesh: u16,
+    pub sub_mesh_count: u16,
 }
 
 #[binrw]
