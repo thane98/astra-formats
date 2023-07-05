@@ -30,6 +30,13 @@ impl SpriteAtlasWrapper {
         }
     }
 
+    pub fn unwrap_sprites(&self) -> HashMap<String, DynamicImage> {
+        self.sprites
+            .keys()
+            .filter_map(|key| self.get_sprite(key).map(|sprite| (key.to_owned(), sprite)))
+            .collect()
+    }
+
     pub fn get_sprite(&self, name: &str) -> Option<DynamicImage> {
         let sprite = self.sprites.get(name)?;
         let render_data = self.render_data.get(&sprite.render_data_key)?;
