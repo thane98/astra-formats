@@ -1,6 +1,6 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Read, Write, Seek, SeekFrom};
 use std::path::Path;
 
 use anyhow::{bail, Result};
@@ -24,11 +24,7 @@ impl MessageMap {
         let mut cursor = Cursor::new(raw_msbt);
         cursor.set_position(0x20);
         let label_groups = parse_lbl1(&mut cursor)?;
-        let mut atr1 = parse_atr1(&mut cursor)?;
-        atr1.retain(|b| *b != 0);
-        if !atr1.is_empty() {
-            bail!("archive actually uses the atr1 section");
-        }
+        skip_atr1(&mut cursor)?;
         let txt2 = parse_txt2(&mut cursor)?;
 
         let num_buckets = label_groups.len();
@@ -149,23 +145,23 @@ fn parse_label(cursor: &mut Cursor<&[u8]>, base_position: u64) -> Result<Vec<(St
     Ok(items)
 }
 
-fn parse_atr1(cursor: &mut Cursor<&[u8]>) -> Result<Vec<u8>> {
+// Skip atr1 because several editors completely break this section.
+fn skip_atr1(cursor: &mut Cursor<&[u8]>) -> Result<()> {
     let magic = read_utf8(4, cursor)?;
     if magic != "ATR1" {
         bail!("expected magic number 'ATR1', found '{}'", magic);
     }
-    let section_length = cursor.read_u32::<LittleEndian>()? as u64;
-    cursor.set_position(cursor.position() + 8);
-    let base_position = cursor.position();
-    let count = cursor.read_u32::<LittleEndian>()?;
-    let unknown = cursor.read_u32::<LittleEndian>()?;
-    if unknown != 1 {
-        bail!("unknown is '{}' but it should be 1 (I think)", unknown);
-    }
-    let mut buffer = vec![0; count as usize];
+    // Skip until we encounter the magic number for TXT2.
+    let mut buffer = vec![0; 4];
     cursor.read_exact(&mut buffer)?;
-    cursor.set_position(align(base_position + section_length, 0x10));
-    Ok(buffer)
+    let mut next = String::from_utf8_lossy(&buffer);
+    while next != "TXT2" {
+        cursor.read_exact(&mut buffer)?;
+        next = String::from_utf8_lossy(&buffer);
+    }
+    // Rewind so parse_txt2 can run like normal.
+    cursor.seek(SeekFrom::Current(-4))?;
+    Ok(())
 }
 
 fn parse_txt2(cursor: &mut Cursor<&[u8]>) -> Result<Vec<Vec<u16>>> {
