@@ -3,9 +3,9 @@ mod asset;
 mod book;
 mod bundle;
 mod msbt;
-mod sprite_atlas;
 
-pub mod texture;
+#[cfg(feature = "atlas")]
+mod atlas;
 
 pub use anyhow as error;
 pub use binrw;
@@ -17,7 +17,9 @@ pub use asset::*;
 pub use book::*;
 pub use bundle::*;
 pub use msbt::MessageMap;
-pub use sprite_atlas::SpriteAtlasWrapper;
+
+#[cfg(feature = "atlas")]
+pub use atlas::*;
 
 #[cfg(feature = "ffi")]
 mod ffi;
