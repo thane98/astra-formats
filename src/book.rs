@@ -24,7 +24,7 @@ impl Book {
 
     pub fn from_string(contents: &str) -> Result<Self> {
         let mut book: Self = quick_xml::de::from_str(contents)?;
-        
+
         // quick-xml allows newlines in attributes and will automatically unescape
         // a newline sequence when it encounters it.
         // We replace this with a space since there isn't a great way to prevent quick-xml
@@ -206,7 +206,10 @@ where
     }
 }
 
-impl<T> FromSheetData for IndexMap<String, T> where T: FromSheetDataParam + UniqueBookEntry {
+impl<T> FromSheetData for IndexMap<String, T>
+where
+    T: FromSheetDataParam + UniqueBookEntry,
+{
     fn from_sheet_data(sheet: SheetData) -> Result<Self> {
         let mut items = IndexMap::new();
         for row in sheet.params {
@@ -315,7 +318,10 @@ where
     }
 }
 
-impl<T> ToSheetData for IndexMap<String, T> where T: ToSheetDataParam {
+impl<T> ToSheetData for IndexMap<String, T>
+where
+    T: ToSheetDataParam,
+{
     fn to_sheet_data(&self, _header: &SheetHeader) -> SheetData {
         let mut params = vec![];
         for row in self.values() {
@@ -332,20 +338,21 @@ where
     fn to_sheet_data(&self, header: &SheetHeader) -> SheetData {
         let mut params = vec![];
         for (key, bucket) in self {
-            let key_param_values = header
-                .params
-                .iter()
-                .map(|param| format!("@{}", param.ident))
-                .map(|param| {
-                    if param == T::key_identifier() {
-                        (param, key.clone())
-                    } else {
-                        (param, String::new())
-                    }
-                })
-                .collect();
             params.push(SheetDataParam {
-                values: key_param_values,
+                values: header
+                    .params
+                    .iter()
+                    .map(|param| {
+                        let attribute_name = format!("@{}", param.ident);
+                        if attribute_name == T::key_identifier() {
+                            (attribute_name, key.clone())
+                        } else if param.type_name == "flag" {
+                            (attribute_name, "0".to_owned())
+                        } else {
+                            (attribute_name, String::new())
+                        }
+                    })
+                    .collect(),
             });
             for item in bucket {
                 params.push(item.to_sheet_data_param());
