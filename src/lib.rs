@@ -4,12 +4,9 @@ mod book;
 mod bundle;
 mod msbt;
 
-#[cfg(feature = "atlas")]
-mod atlas;
-
 pub use anyhow as error;
 pub use binrw;
-pub use image;
+
 pub use indexmap;
 
 pub use asset::*;
@@ -19,7 +16,13 @@ pub use bundle::*;
 pub use msbt::MessageMap;
 
 #[cfg(feature = "atlas")]
+mod atlas;
+
+#[cfg(feature = "atlas")]
 pub use atlas::*;
+
+#[cfg(feature = "atlas")]
+pub use image;
 
 #[cfg(feature = "ffi")]
 mod ffi;
