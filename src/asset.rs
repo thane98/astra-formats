@@ -510,7 +510,9 @@ impl BinRead for Asset {
             ANIMATOR_HASH => Animator::read_options(reader, endian, ()).map(Self::Animator),
             MESH_HASH => Mesh::read_options(reader, endian, ()).map(Self::Mesh),
             MESH_FILTER_HASH => MeshFilter::read_options(reader, endian, ()).map(Self::MeshFilter),
-            MESH_RENDERER_HASH => MeshRenderer::read_options(reader, endian, ()).map(Self::MeshRenderer),
+            MESH_RENDERER_HASH => {
+                MeshRenderer::read_options(reader, endian, ()).map(Self::MeshRenderer)
+            }
             AVATAR_HASH => Avatar::read_options(reader, endian, ()).map(Self::Avatar),
             TRANSFORM_HASH => Transform::read_options(reader, endian, ()).map(Self::Transform),
             MATERIAL_HASH => Material::read_options(reader, endian, ()).map(Self::Material),

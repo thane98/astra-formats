@@ -8,9 +8,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use lzma_rs::decompress::UnpackedSize;
 
-use crate::{
-    Asset, AssetFile, MessageMap, MonoBehavior, TerrainData, TextAsset,
-};
+use crate::{Asset, AssetFile, MessageMap, MonoBehavior, TerrainData, TextAsset};
 
 #[cfg(feature = "msbt_script")]
 use crate::{

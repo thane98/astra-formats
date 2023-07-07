@@ -1,10 +1,13 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::{Bundle, BundleFile, RenderDataKey, SpriteAtlasData, Sprite, SpriteAtlas, Texture2D, AssetFile, Asset, TextureFormat};
-use anyhow::{Result, anyhow, bail};
+use crate::{
+    Asset, AssetFile, Bundle, BundleFile, RenderDataKey, Sprite, SpriteAtlas, SpriteAtlasData,
+    Texture2D, TextureFormat,
+};
+use anyhow::{anyhow, bail, Result};
 use astc_decode::Footprint;
-use image::{DynamicImage, RgbaImage, GrayImage};
+use image::{DynamicImage, GrayImage, RgbaImage};
 use tegra_swizzle::BlockHeight;
 
 pub struct SpriteAtlasWrapper {
@@ -77,10 +80,7 @@ impl AtlasBundle {
             let mut textures = HashMap::new();
             let mut slice_start = 0;
             for (id, texture) in assets.textures {
-                textures.insert(
-                    id as i64,
-                    decode(&texture, &image_data[slice_start..])?,
-                );
+                textures.insert(id as i64, decode(&texture, &image_data[slice_start..])?);
                 slice_start += texture.width as usize * texture.height as usize;
             }
             Ok(SpriteAtlasWrapper::new(
