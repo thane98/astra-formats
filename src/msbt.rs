@@ -152,12 +152,9 @@ fn skip_atr1(cursor: &mut Cursor<&[u8]>) -> Result<()> {
         bail!("expected magic number 'ATR1', found '{}'", magic);
     }
     // Skip until we encounter the magic number for TXT2.
-    let mut buffer = vec![0; 4];
-    cursor.read_exact(&mut buffer)?;
-    let mut next = String::from_utf8_lossy(&buffer);
-    while next != "TXT2" {
-        cursor.read_exact(&mut buffer)?;
-        next = String::from_utf8_lossy(&buffer);
+    let mut next = cursor.read_u32::<LittleEndian>()?;
+    while &next.to_le_bytes() != b"TXT2" {
+        next = cursor.read_u32::<LittleEndian>()?;
     }
     // Rewind so parse_txt2 can run like normal.
     cursor.seek(SeekFrom::Current(-4))?;

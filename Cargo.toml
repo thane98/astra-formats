@@ -16,7 +16,7 @@ ffi = []
 serde = { version = "1.0.152", features = ["derive"] }
 quick-xml = { version = "0.29.0", features = ["serialize"] }
 anyhow = "1.0.65"
-indexmap = { version = "1.7.0", features = ["serde"] }
+indexmap = { version = "2.0.0", features = ["serde"] }
 itertools = "0.10.5"
 byteorder = "1.4.3"
 encoding_rs = "0.8.31"
