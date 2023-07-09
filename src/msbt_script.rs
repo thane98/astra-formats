@@ -143,12 +143,12 @@ fn parse_msbt_tokens(contents: &[u16]) -> Result<Vec<MsbtToken>> {
                 match command {
                     1 => {
                         let arg = scanner.next()?;
-                        let _ = scanner.next()?; // Command length
+                        let _ = scanner.next(); // Command length (swallowed)
                         MsbtToken::Arg(arg)
                     }
                     2 => {
                         let talk_type = scanner.next()?;
-                        let _ = scanner.next()?; // Command length
+                        let _ = scanner.next(); // Command length (swallowed)
                         MsbtToken::TalkType {
                             talk_type,
                             unknown: if talk_type == 0 {
@@ -160,7 +160,7 @@ fn parse_msbt_tokens(contents: &[u16]) -> Result<Vec<MsbtToken>> {
                     }
                     3 => {
                         let window_type = scanner.next()?;
-                        let _ = scanner.next()?; // Command length
+                        let _ = scanner.next()?; // Command length (swallowed)
                         MsbtToken::Window {
                             window_type,
                             speaker: scanner.next_string_param()?,
@@ -173,7 +173,7 @@ fn parse_msbt_tokens(contents: &[u16]) -> Result<Vec<MsbtToken>> {
                     }
                     4 => {
                         let wait_type = scanner.next()?;
-                        let _ = scanner.next()?; // Command length.
+                        let _ = scanner.next(); // Command length (swallowed)
                         MsbtToken::Wait {
                             wait_type,
                             duration: if wait_type == 3 {
@@ -185,7 +185,7 @@ fn parse_msbt_tokens(contents: &[u16]) -> Result<Vec<MsbtToken>> {
                     }
                     5 => {
                         let animation_type = scanner.next()?;
-                        let _ = scanner.next()?; // Command length.
+                        let _ = scanner.next()?; // Command length (swallowed)
                         MsbtToken::Animation {
                             animation_type,
                             target: scanner.next_string_param()?,
@@ -194,7 +194,7 @@ fn parse_msbt_tokens(contents: &[u16]) -> Result<Vec<MsbtToken>> {
                     }
                     6 => {
                         let name_type = scanner.next()?;
-                        let _ = scanner.next()?; // Command length.
+                        let _ = scanner.next()?; // Command length (swallowed)
                         match name_type {
                             0 => MsbtToken::Alias {
                                 actual: scanner.next_string_param()?,
@@ -207,7 +207,7 @@ fn parse_msbt_tokens(contents: &[u16]) -> Result<Vec<MsbtToken>> {
                     }
                     7 => {
                         let fade_type = scanner.next()?;
-                        let _ = scanner.next()?; // Command length.
+                        let _ = scanner.next()?; // Command length (swallowed)
                         if fade_type > 1 {
                             bail!("expected fade type 0 or 1, found {}", fade_type);
                         }
@@ -223,7 +223,7 @@ fn parse_msbt_tokens(contents: &[u16]) -> Result<Vec<MsbtToken>> {
                     }
                     8 => {
                         let icon_type = scanner.next()?;
-                        let _ = scanner.next()?; // Command length.
+                        let _ = scanner.next()?; // Command length (swallowed)
                         if icon_type != 2 {
                             bail!("expected icon type to be 2");
                         }
@@ -231,7 +231,7 @@ fn parse_msbt_tokens(contents: &[u16]) -> Result<Vec<MsbtToken>> {
                     }
                     10 => {
                         let localize_type = scanner.next()?;
-                        let _ = scanner.next()?; // Command length.
+                        let _ = scanner.next()?; // Command length (swallowed)
                         if localize_type != 0 {
                             bail!("expected localize type 0, found {}", localize_type);
                         }
@@ -242,7 +242,7 @@ fn parse_msbt_tokens(contents: &[u16]) -> Result<Vec<MsbtToken>> {
                     }
                     11 => {
                         let picture_type = scanner.next()?;
-                        let _ = scanner.next()?;
+                        let _ = scanner.next()?; // Command length (swallowed)
                         if picture_type > 1 {
                             bail!("unsupported picture type '{}'", picture_type);
                         }

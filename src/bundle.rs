@@ -46,7 +46,9 @@ impl Bundle {
         let mut blob = vec![];
         for block in &meta_data.blocks {
             let mut buffer = vec![0; block.compressed_size as usize];
-            cursor.read_exact(&mut buffer)?;
+            cursor
+                .read_exact(&mut buffer)
+                .with_context(|| format!("Failed to read block {:?}", block))?;
             match block.flags & 0x3F {
                 0 => blob.extend(buffer),
                 1 => {

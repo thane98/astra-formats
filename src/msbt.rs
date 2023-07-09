@@ -3,7 +3,7 @@ use indexmap::IndexMap;
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 
 fn align(operand: u64, alignment: u64) -> u64 {
     (operand + (alignment - 1)) & !(alignment - 1)
@@ -23,9 +23,9 @@ impl MessageMap {
     pub fn from_slice(raw_msbt: &[u8]) -> Result<Self> {
         let mut cursor = Cursor::new(raw_msbt);
         cursor.set_position(0x20);
-        let label_groups = parse_lbl1(&mut cursor)?;
-        skip_atr1(&mut cursor)?;
-        let txt2 = parse_txt2(&mut cursor)?;
+        let label_groups = parse_lbl1(&mut cursor).context("Failed to parse lbl1")?;
+        skip_atr1(&mut cursor).context("Failed to skip atr1")?;
+        let txt2 = parse_txt2(&mut cursor).context("Failed to parse txt2")?;
 
         let num_buckets = label_groups.len();
         let mut messages = IndexMap::new();
