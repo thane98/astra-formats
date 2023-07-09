@@ -1,7 +1,7 @@
 use std::io::{BufReader, Cursor, Read, Seek, Write};
 use std::path::Path;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use binrw::{binrw, BinRead, BinWrite, NullString};
 use encoding_rs::UTF_8;
 use indexmap::IndexMap;
@@ -40,7 +40,8 @@ impl Bundle {
 
     pub fn from_slice(raw_bundle: &[u8]) -> Result<Self> {
         let mut cursor = Cursor::new(raw_bundle);
-        let meta_data = Self::read_header_and_meta_data(&mut cursor)?;
+        let meta_data = Self::read_header_and_meta_data(&mut cursor)
+            .context("Failed to read bundle meta data")?;
 
         let mut blob = vec![];
         for block in &meta_data.blocks {
@@ -111,10 +112,12 @@ impl Bundle {
                     unpacked_size: UnpackedSize::UseProvided(Some(header.decompressed_size as u64)),
                     ..Default::default()
                 };
-                lzma_rs::lzma_decompress_with_options(&mut reader, &mut output_buffer, &options)?;
+                lzma_rs::lzma_decompress_with_options(&mut reader, &mut output_buffer, &options)
+                    .context("LZMA decompression failed")?;
                 output_buffer
             }
-            2 | 3 => lz4_flex::decompress(&buffer, header.decompressed_size as usize)?,
+            2 | 3 => lz4_flex::decompress(&buffer, header.decompressed_size as usize)
+                .context("LZ4 decompression failed")?,
             _ => bail!("unsupported compression type '{}'", header.flags & 0x3F),
         };
 
