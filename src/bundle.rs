@@ -1,4 +1,4 @@
-use std::io::{BufReader, Cursor, Read, Seek, Write};
+use std::io::{BufReader, Cursor, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -68,9 +68,9 @@ impl Bundle {
                     blob.extend(output_buffer);
                 }
                 2 | 3 => {
-                    blob.extend(lz4_flex::decompress(
+                    blob.extend(lz4::block::decompress(
                         &buffer,
-                        block.decompressed_size as usize,
+                        Some(block.decompressed_size as i32),
                     )?);
                 }
                 _ => bail!("unsupported compression type '{}'", block.flags & 0x3F),
@@ -104,7 +104,14 @@ impl Bundle {
     {
         let header = Header::read_be(reader)?;
         let mut buffer = vec![0; header.compressed_size as usize];
-        reader.read_exact(&mut buffer)?;
+        if header.flags & 0x80 != 0 {
+            let position = reader.stream_position()?;
+            reader.seek(SeekFrom::End(-(header.compressed_size as i64)))?;
+            reader.read_exact(&mut buffer)?;
+            reader.seek(SeekFrom::Start(position))?;
+        } else {
+            reader.read_exact(&mut buffer)?;
+        }
         let decompressed_data = match header.flags & 0x3F {
             0 => buffer,
             1 => {
@@ -118,7 +125,7 @@ impl Bundle {
                     .context("LZMA decompression failed")?;
                 output_buffer
             }
-            2 | 3 => lz4_flex::decompress(&buffer, header.decompressed_size as usize)
+            2 | 3 => lz4::block::decompress(&buffer, Some(header.decompressed_size as i32))
                 .context("LZ4 decompression failed")?,
             _ => bail!("unsupported compression type '{}'", header.flags & 0x3F),
         };
@@ -160,7 +167,8 @@ impl Bundle {
         let mut blocks = vec![];
         for chunk_start in (0..uncompressed_blob.len()).step_by(0x20000) {
             let chunk_end = (chunk_start + 0x20000).min(uncompressed_blob.len());
-            let chunk_buffer = lz4_flex::compress(&uncompressed_blob[chunk_start..chunk_end]);
+            let chunk_buffer =
+                lz4::block::compress(&uncompressed_blob[chunk_start..chunk_end], None, false)?;
             blocks.push(Block {
                 decompressed_size: (chunk_end - chunk_start) as u32,
                 compressed_size: chunk_buffer.len() as u32,

@@ -20,7 +20,7 @@ indexmap = { version = "2.0.0", features = ["serde"] }
 itertools = "0.10.5"
 byteorder = "1.4.3"
 encoding_rs = "0.8.31"
-lz4_flex = "0.11.1"
+lz4 = "1.24.0"
 binrw = "0.11.2"
 lzma-rs = "0.3.0"
 
