@@ -104,7 +104,7 @@ fn extract_atlas_assets(asset_file: AssetFile) -> Result<AtlasAssets> {
     let mut sprites = vec![];
     let mut textures = vec![];
     let mut atlas = None;
-    for asset in asset_file.assets {
+    for asset in asset_file.get_assets()? {
         match asset {
             Asset::Texture2D(asset, id) => textures.push((id, asset)),
             Asset::SpriteAtlas(asset) => atlas = Some(asset),

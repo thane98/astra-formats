@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 use std::ops::{Deref, DerefMut};
+use std::sync::{Mutex, MutexGuard};
 
 use anyhow::{bail, Result};
 use binrw::meta::{EndianKind, ReadEndian, WriteEndian};
@@ -36,6 +37,25 @@ fn write_padding<W: Write + Seek>(writer: &mut W, align: u64) -> BinResult<()> {
     Ok(())
 }
 
+pub trait SeekRead: std::io::Read + std::io::Seek + std::fmt::Debug {}
+impl<R: std::io::Read + std::io::Seek + std::fmt::Debug> SeekRead for R {}
+
+// Wrapper type for implementing Read + Seek for MutexGuard
+#[repr(transparent)]
+struct MutexReader<'a>(MutexGuard<'a, Box<dyn SeekRead + Send + 'static>>);
+
+impl<'a> std::io::Read for MutexReader<'a> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.0.read(buf)
+    }
+}
+
+impl<'a> std::io::Seek for MutexReader<'a> {
+    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        self.0.seek(pos)
+    }
+}
+
 #[binread]
 #[derive(Debug)]
 #[br(little, assert(ref_type_count == 0))]
@@ -50,7 +70,7 @@ pub struct AssetFile {
 
     #[br(align_after = 4, temp)]
     object_count: u32,
-    #[br(count = object_count, temp)]
+    #[br(count = object_count)]
     objects: Vec<AssetFileObject>,
     #[br(calc = objects.iter().map(|obj| obj.path_id).collect())]
     path_ids: Vec<u64>,
@@ -70,8 +90,84 @@ pub struct AssetFile {
     ref_type_count: u32,
     user_info: NullString,
 
-    #[br(parse_with = |reader, endian, _: ()| read_assets(reader, endian, &types, &objects, header.data_offset))]
-    pub assets: Vec<Asset>,
+    #[br(calc = Mutex::new(Box::new(Cursor::new([])) as _))]
+    pub reader: Mutex<Box<dyn SeekRead + Send>>,
+    #[br(ignore)]
+    assets: Vec<Asset>,
+}
+
+
+impl AssetFile {
+    pub fn get_assets_by_type_hash(&self, type_hash: i128) -> BinResult<Vec<Asset>> {
+        let mut assets = vec![];
+        let mut reader = Box::new(MutexReader(self.reader.lock().unwrap()));
+
+        let mut sorted_objects = self.objects.iter().filter(|obj| self.types[obj.type_id as usize].type_hash == type_hash).collect_vec();
+        sorted_objects.sort_by(|a, b| a.offset.cmp(&b.offset));
+
+
+        for obj in sorted_objects {
+            let ty = &self.types[obj.type_id as usize]; // TODO: Bounds check.
+            reader.seek(SeekFrom::Start(self.header.data_offset + obj.offset))?;
+            assets.push(Asset::read_options(
+                &mut reader,
+                Endian::Little,
+                (ty.type_hash, obj.path_id),
+            )?);
+        }
+
+        Ok(assets)
+    }
+
+    pub fn get_assets_by_type_hash_mut(&mut self, type_hash: i128) -> BinResult<Vec<&mut Asset>> {
+        Ok(self.get_assets_mut()?.iter_mut().filter(|asset| asset.type_hash() == type_hash).collect_vec())
+    }
+
+    pub fn get_assets(&self) -> BinResult<Vec<Asset>> {
+        if !self.assets.is_empty() {
+            Ok(self.assets.clone())
+        } else {
+            let mut assets = vec![];
+            let mut reader = Box::new(MutexReader(self.reader.lock().unwrap()));
+
+            let mut sorted_objects = self.objects.iter().collect_vec();
+            sorted_objects.sort_by(|a, b| a.offset.cmp(&b.offset));
+
+            for obj in sorted_objects {
+                let ty = &self.types[obj.type_id as usize]; // TODO: Bounds check.
+                reader.seek(SeekFrom::Start(self.header.data_offset + obj.offset))?;
+                assets.push(Asset::read_options(
+                    &mut reader,
+                    Endian::Little,
+                    (ty.type_hash, obj.path_id),
+                )?);
+            }
+
+            Ok(assets)
+        }
+    }
+
+    pub fn get_assets_mut(&mut self) -> BinResult<&mut Vec<Asset>> {
+        if !self.assets.is_empty() {
+            Ok(&mut self.assets)
+        } else {
+            let mut reader = Box::new(MutexReader(self.reader.lock().unwrap()));
+
+            let mut sorted_objects = self.objects.iter().collect_vec();
+            sorted_objects.sort_by(|a, b| a.offset.cmp(&b.offset));
+
+            for obj in sorted_objects {
+                let ty = &self.types[obj.type_id as usize]; // TODO: Bounds check.
+                reader.seek(SeekFrom::Start(self.header.data_offset + obj.offset))?;
+                self.assets.push(Asset::read_options(
+                    &mut reader,
+                    Endian::Little,
+                    (ty.type_hash, obj.path_id),
+                )?);
+            }
+            Ok(&mut self.assets)
+        }
+    }
 }
 
 impl BinWrite for AssetFile {
@@ -83,6 +179,8 @@ impl BinWrite for AssetFile {
         endian: Endian,
         _: Self::Args<'_>,
     ) -> BinResult<()> {
+        let assets = self.get_assets()?;
+
         // Reserve space for the header. Don't know enough to build it yet.
         let base_position = writer.stream_position()?;
         for _ in 0..(0x36 + self.header.unity_version.len()) {
@@ -93,11 +191,11 @@ impl BinWrite for AssetFile {
         let meta_data_base = writer.stream_position()?;
         (self.types.len() as u32).write_options(writer, endian, ())?;
         self.types.write_options(writer, endian, ())?;
-        (self.assets.len() as u32).write_options(writer, endian, ())?;
+        (assets.len() as u32).write_options(writer, endian, ())?;
         write_padding(writer, 4)?;
         // Objects. Don't know the object sizes yet, so come back later.
         let objects_position = writer.stream_position()?;
-        for _ in 0..(24 * self.assets.len()) {
+        for _ in 0..(24 * assets.len()) {
             writer.write_u8(0)?;
         }
         (self.scripts.len() as u32).write_options(writer, endian, ())?;
@@ -122,9 +220,9 @@ impl BinWrite for AssetFile {
             .enumerate()
             .map(|(index, ty)| (ty.type_hash, index))
             .collect();
-        let mut objects = vec![AssetFileObject::default(); self.assets.len()];
+        let mut objects = vec![AssetFileObject::default(); assets.len()];
         let start = writer.stream_position()?;
-        for (asset, object_index) in izip!(&self.assets, &self.object_order) {
+        for (asset, object_index) in izip!(assets, &self.object_order) {
             write_padding(writer, 8)?;
             let offset = writer.stream_position()? - start;
             asset.write_options(writer, endian, ())?;
@@ -170,28 +268,6 @@ impl BinWrite for AssetFile {
 
 impl WriteEndian for AssetFile {
     const ENDIAN: EndianKind = EndianKind::Endian(Endian::Little);
-}
-
-fn read_assets<R: Read + Seek>(
-    reader: &mut R,
-    endian: Endian,
-    types: &[AssetFileType],
-    objects: &[AssetFileObject],
-    data_offset: u64,
-) -> BinResult<Vec<Asset>> {
-    let mut assets = vec![];
-    let mut sorted_objects = objects.iter().collect_vec();
-    sorted_objects.sort_by(|a, b| a.offset.cmp(&b.offset));
-    for obj in sorted_objects {
-        let ty = &types[obj.type_id as usize]; // TODO: Bounds check.
-        reader.seek(SeekFrom::Start(data_offset + obj.offset))?;
-        assets.push(Asset::read_options(
-            reader,
-            endian,
-            (ty.type_hash, obj.path_id),
-        )?);
-    }
-    Ok(assets)
 }
 
 // Object table entries appear to be ordered randomly.
@@ -432,7 +508,7 @@ pub struct AssetExternal {
     pub path: NullString,
 }
 
-#[derive(Debug, BinWrite)]
+#[derive(Debug, BinWrite, Clone)]
 pub enum Asset {
     Bundle(AssetBundle),
     Text(TextAsset),
@@ -696,7 +772,7 @@ impl BinWrite for UString {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AssetBundle {
     pub name: UString,
     pub preloads: UArray<PPtr>,
@@ -721,7 +797,7 @@ pub struct PPtr {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AssetInfo {
     pub preload_index: u32,
     pub preload_size: u32,
@@ -729,7 +805,7 @@ pub struct AssetInfo {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GameObject {
     pub component: UArray<PPtr>,
     pub layer: u32,
@@ -740,7 +816,7 @@ pub struct GameObject {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Transform {
     pub game_object: PPtr,
     pub local_rotation: Quaternionf,
@@ -751,7 +827,7 @@ pub struct Transform {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Animator {
     pub game_object: PPtr,
     pub enabled: u8,
@@ -769,14 +845,14 @@ pub struct Animator {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TextAsset {
     pub name: UString,
     pub data: UArray<u8>,
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MonoScript {
     pub name: UString,
     #[brw(align_before = 4)]
@@ -909,7 +985,7 @@ pub struct TerrainOverlapData {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Texture2D {
     pub name: UString,
     #[brw(align_before = 4)]
@@ -939,7 +1015,7 @@ pub struct Texture2D {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GlTextureSettings {
     pub filter_mode: i32,
     pub aniso: i32,
@@ -950,7 +1026,7 @@ pub struct GlTextureSettings {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StreamingInfo {
     pub offset: u64,
     pub size: u32,
@@ -1036,7 +1112,7 @@ pub enum TextureFormat {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SpriteAtlas {
     pub name: UString,
     pub packed_sprites: UArray<PPtr>,
@@ -1055,7 +1131,7 @@ pub struct RenderDataKey {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SpriteAtlasData {
     pub texture: PPtr,
     pub alpha_texture: PPtr,
@@ -1069,7 +1145,7 @@ pub struct SpriteAtlasData {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Sprite {
     pub name: UString,
     pub rect: RectF,
@@ -1088,7 +1164,7 @@ pub struct Sprite {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RectF {
     #[brw(align_before = 4)]
     pub x: f32,
@@ -1098,7 +1174,7 @@ pub struct RectF {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Vector2f {
     #[brw(align_before = 4)]
     pub x: f32,
@@ -1106,7 +1182,7 @@ pub struct Vector2f {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Vector3f {
     #[brw(align_before = 4)]
     pub x: f32,
@@ -1115,7 +1191,7 @@ pub struct Vector3f {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Vector4f {
     #[brw(align_before = 4)]
     pub x: f32,
@@ -1125,7 +1201,7 @@ pub struct Vector4f {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SpriteRenderData {
     pub texture: PPtr,
     pub alpha_texture: PPtr,
@@ -1143,14 +1219,14 @@ pub struct SpriteRenderData {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SecondarySpriteTexture {
     pub texture: PPtr,
     pub name: UString,
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SubMesh {
     #[brw(align_before = 4)]
     pub first_byte: u32,
@@ -1163,14 +1239,14 @@ pub struct SubMesh {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AABB {
     pub center: Vector3f,
     pub extent: Vector3f,
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VertexData {
     #[brw(align_before = 4)]
     pub vertex_count: u32,
@@ -1179,7 +1255,7 @@ pub struct VertexData {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ChannelInfo {
     pub stream: u8,
     pub offset: u8,
@@ -1188,7 +1264,7 @@ pub struct ChannelInfo {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Matrix4x4f {
     pub e00: f32,
     pub e01: f32,
@@ -1209,7 +1285,7 @@ pub struct Matrix4x4f {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SpriteBone {
     pub name: UString,
     pub position: Vector3f,
@@ -1219,7 +1295,7 @@ pub struct SpriteBone {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Quaternionf {
     pub x: f32,
     pub y: f32,
@@ -1228,7 +1304,7 @@ pub struct Quaternionf {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Mesh {
     pub name: UString,
     pub sub_meshes: UArray<SubMesh>,
@@ -1257,7 +1333,7 @@ pub struct Mesh {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlendShapeData {
     pub vertices: UArray<BlendShapeVertex>,
     pub shapes: UArray<MeshBlendShape>,
@@ -1266,7 +1342,7 @@ pub struct BlendShapeData {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlendShapeVertex {
     pub vertex: Vector3f,
     pub normal: Vector3f,
@@ -1275,7 +1351,7 @@ pub struct BlendShapeVertex {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MeshBlendShape {
     pub first_vertex: u32,
     pub vertex_count: u32,
@@ -1284,7 +1360,7 @@ pub struct MeshBlendShape {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MeshBlendShapeChannel {
     pub name: UString,
     pub name_hash: u32,
@@ -1293,14 +1369,14 @@ pub struct MeshBlendShapeChannel {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MinMaxAABB {
     min: Vector3f,
     max: Vector3f,
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CompressedMesh {
     pub vertices: PackedBitVector,
     pub uv: PackedBitVector,
@@ -1317,7 +1393,7 @@ pub struct CompressedMesh {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PackedBitVector {
     #[brw(align_before = 4)]
     pub num_items: u32,
@@ -1328,7 +1404,7 @@ pub struct PackedBitVector {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PackedBitVector2 {
     #[brw(align_before = 4)]
     pub num_items: u32,
@@ -1337,7 +1413,7 @@ pub struct PackedBitVector2 {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Avatar {
     pub name: UString,
     pub avatar_size: u32,
@@ -1347,7 +1423,7 @@ pub struct Avatar {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TosPair {
     #[brw(align_before = 4)]
     pub first: u32,
@@ -1355,7 +1431,7 @@ pub struct TosPair {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AvatarConstant {
     pub skeleton: Skeleton,
     pub avatar_skeleton_pose: SkeletonPose,
@@ -1372,7 +1448,7 @@ pub struct AvatarConstant {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Skeleton {
     pub node: UArray<SkeletonNode>,
     pub id: UArray<u32>,
@@ -1380,14 +1456,14 @@ pub struct Skeleton {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SkeletonNode {
     pub parent_id: u32,
     pub axes_id: u32,
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SkeletonAxes {
     pub pre_q: Vector4f,
     pub post_q: Vector4f,
@@ -1398,20 +1474,20 @@ pub struct SkeletonAxes {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SkeletonLimit {
     pub min: Vector3f,
     pub max: Vector3f,
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SkeletonPose {
     pub transform: UArray<SkeletonTransform>,
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SkeletonTransform {
     pub transform: Vector3f,
     pub quaternion: Quaternionf,
@@ -1419,7 +1495,7 @@ pub struct SkeletonTransform {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AvatarHuman {
     pub root_x: SkeletonTransform,
     pub skeleton: Skeleton,
@@ -1442,7 +1518,7 @@ pub struct AvatarHuman {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HumanDescription {
     pub human: UArray<HumanBone>,
     pub skeleton: UArray<SkeletonBone>,
@@ -1461,7 +1537,7 @@ pub struct HumanDescription {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HumanBone {
     pub bone_name: UString,
     pub human_name: UString,
@@ -1469,7 +1545,7 @@ pub struct HumanBone {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SkeletonBoneLimit {
     pub min: Vector3f,
     pub max: Vector3f,
@@ -1479,7 +1555,7 @@ pub struct SkeletonBoneLimit {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SkeletonBone {
     pub name: UString,
     pub parent_name: UString,
@@ -1489,7 +1565,7 @@ pub struct SkeletonBone {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Material {
     pub name: UString,
     pub shader: PPtr,
@@ -1507,7 +1583,7 @@ pub struct Material {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UnityPropertySheet {
     pub text_envs: UArray<(UString, TexEnv)>,
     pub floats: UArray<FloatPropertySheetPair>,
@@ -1515,7 +1591,7 @@ pub struct UnityPropertySheet {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TexEnv {
     #[brw(align_before = 4)]
     pub texture: PPtr,
@@ -1524,7 +1600,7 @@ pub struct TexEnv {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FloatPropertySheetPair {
     pub key: UString,
     #[brw(align_before = 4)]
@@ -1532,7 +1608,7 @@ pub struct FloatPropertySheetPair {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ColorRGBA {
     #[brw(align_before = 4)]
     pub r: f32,
@@ -1542,14 +1618,14 @@ pub struct ColorRGBA {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MeshFilter {
     pub game_object: PPtr,
     pub mesh: PPtr,
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MeshRenderer {
     pub game_object: PPtr,
     pub enabled: u8,
@@ -1581,14 +1657,14 @@ pub struct MeshRenderer {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StaticBatchInfo {
     pub first_sub_mesh: u16,
     pub sub_mesh_count: u16,
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SkinnedMeshRenderer {
     pub game_object: PPtr,
     pub enabled: u8,
@@ -1629,7 +1705,7 @@ pub struct SkinnedMeshRenderer {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SpringJob {
     pub optimize_transform: u32,
     pub is_paused: u32,
@@ -1661,7 +1737,7 @@ pub struct SpringJob {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SpringBoneProperties {
     pub stiffness_force: f32,
     pub drag_force: f32,
@@ -1681,7 +1757,7 @@ pub struct SpringBoneProperties {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AngleLimits {
     pub active: u8,
     #[brw(align_before = 4)]
@@ -1690,7 +1766,7 @@ pub struct AngleLimits {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SpringColliderProperty {
     pub ty: u32,
     pub radius: f32,
@@ -1699,14 +1775,14 @@ pub struct SpringColliderProperty {
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LengthLimitProperty {
     pub target_index: u32,
     pub target: f32,
 }
 
 #[binrw]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SpringBone {
     pub index: u32,
     pub enabled_job_system: u8,

@@ -89,8 +89,10 @@ impl Bundle {
                 match node.file_type {
                     BundleFileType::Raw => BundleFile::Raw(blob[start..end].to_vec()),
                     BundleFileType::Assets => {
-                        let mut cursor = Cursor::new(&blob[start..end]);
-                        BundleFile::Assets(AssetFile::read_le(&mut cursor)?)
+                        let mut cursor = Cursor::new(blob[start..end].to_vec());
+                        let assetfile = AssetFile::read_le(&mut cursor)?;
+                        *assetfile.reader.lock().unwrap() = Box::new(cursor);
+                        BundleFile::Assets(assetfile)
                     }
                 },
             );
@@ -374,7 +376,7 @@ impl TextBundle {
                 }
             })
             .and_then(|assets_file| {
-                assets_file.assets.iter_mut().find_map(|asset| {
+                assets_file.get_assets_mut().ok()?.iter_mut().find_map(|asset| {
                     if let Asset::Text(text) = asset {
                         Some(text)
                     } else {
@@ -436,7 +438,7 @@ impl TerrainBundle {
                 }
             })
             .and_then(|assets_file| {
-                assets_file.assets.iter_mut().find_map(|asset| {
+                assets_file.get_assets_mut().ok()?.iter_mut().find_map(|asset| {
                     if let Asset::Terrain(terrain) = asset {
                         Some(terrain)
                     } else {
