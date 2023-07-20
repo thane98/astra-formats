@@ -453,6 +453,7 @@ pub enum Asset {
     SkinnedMeshRenderer(SkinnedMeshRenderer),
     SpringJob(MonoBehavior<SpringJob>),
     SpringBone(MonoBehavior<SpringBone>),
+    Unparsed(Unparsed)
 }
 
 impl Asset {
@@ -477,6 +478,7 @@ impl Asset {
             Asset::SkinnedMeshRenderer(_) => SKINNED_MESH_RENDERER_HASH,
             Asset::SpringJob(_) => SPRING_JOB_MONO_BEHAVIOR_HASH,
             Asset::SpringBone(_) => SPRING_BONE_MONO_BEHAVIOR_HASH,
+            Asset::Unparsed(blob) => blob.type_hash,
         }
     }
 }
@@ -525,15 +527,38 @@ impl BinRead for Asset {
             SPRING_BONE_MONO_BEHAVIOR_HASH => {
                 MonoBehavior::<SpringBone>::read_options(reader, endian, ()).map(Self::SpringBone)
             }
-            _ => Err(binrw::Error::NoVariantMatch {
-                pos: reader.stream_position()?,
-            }),
+            _ => {
+                Ok(Self::Unparsed(Unparsed { type_hash, path_id: pptr, blob: binrw::until_eof(reader, endian, ())? }))
+            },
         }
     }
 }
 
 impl ReadEndian for Asset {
     const ENDIAN: EndianKind = EndianKind::Endian(Endian::Little);
+}
+
+#[binread]
+#[derive(Debug, Clone)]
+pub struct Unparsed {
+    pub type_hash: i128,
+    pub path_id: u64,
+    #[br(ignore)]
+    pub blob: Vec<u8>,
+}
+
+impl BinWrite for Unparsed {
+    type Args<'a> = ();
+
+    fn write_options<W: Write + Seek>(
+        &self,
+        writer: &mut W,
+        endian: Endian,
+        args: Self::Args<'_>,
+    ) -> BinResult<()> {
+        self.blob.write_options(writer, endian, args)?;
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
