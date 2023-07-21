@@ -81,6 +81,10 @@ impl Bundle {
         for node in meta_data.nodes {
             let start = node.offset as usize;
             let end = (node.offset + node.size) as usize;
+            // FAILSAFE: Some nodes appear to be of size 0, so we skip them (users manually toying with resS?)
+            if end - start == 0 {
+                continue
+            }
             if end > blob.len() || start >= blob.len() {
                 bail!("corrupted file offset/size for node '{}'", node.path);
             }
