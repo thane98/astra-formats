@@ -110,7 +110,7 @@ impl Bundle {
         let mut buffer = vec![0; header.compressed_size as usize];
         if header.flags & 0x80 != 0 {
             let position = reader.stream_position()?;
-            reader.seek(SeekFrom::End(-(header.compressed_size as i64)))?;
+            reader.seek(SeekFrom::Start(header.file_size - header.compressed_size as u64))?;
             reader.read_exact(&mut buffer)?;
             reader.seek(SeekFrom::Start(position))?;
         } else {
