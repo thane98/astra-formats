@@ -132,7 +132,7 @@ enum Token {
     Show,
     #[token("$Hide")]
     Hide,
-    #[regex("\\n")]
+    #[regex("(\\r\\n|\\r|\\n)")]
     NewLine,
     #[regex("-?\\d*")]
     Number,
@@ -140,7 +140,7 @@ enum Token {
     Str,
     #[regex("\\[[ \t]*[\\w\\d#]+[ \t]*\\]")]
     Identifier,
-    #[regex("[^(),$\\d\\n][^$\"\\n\\d]*")]
+    #[regex("[^(),$\\d\\n][^$\"\\r\\n\\d]*")]
     Text,
     Error,
 }
