@@ -486,7 +486,6 @@ impl MessageBundle {
         self.0.rename_cab(new_file_name)
     }
 
-    #[cfg(not(feature = "msbt_script"))]
     pub fn extract_data(&mut self) -> Result<IndexMap<String, Vec<u16>>> {
         Ok(std::mem::take(&mut self.1.messages))
     }
@@ -510,7 +509,6 @@ impl MessageBundle {
         Ok(out)
     }
 
-    #[cfg(not(feature = "msbt_script"))]
     pub fn replace_data(&mut self, new_data: IndexMap<String, Vec<u16>>) -> Result<()> {
         self.1.messages = new_data;
         Ok(())

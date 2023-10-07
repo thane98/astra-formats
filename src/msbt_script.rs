@@ -16,6 +16,9 @@ pub enum MsbtToken {
         speaker: String,
         variation: Option<String>,
     },
+    Window2 {
+        window_type: u16,
+    },
     Wait {
         wait_type: u16,
         duration: Option<u32>,
@@ -38,8 +41,12 @@ pub enum MsbtToken {
     },
     Icon(String),
     Localize {
+        localize_type: u16,
         option1: String,
         option2: String,
+    },
+    Localize2 {
+        localize_type: u16,
     },
     PictureShow {
         unknown: u32,
@@ -161,14 +168,18 @@ fn parse_msbt_tokens(contents: &[u16]) -> Result<Vec<MsbtToken>> {
                     3 => {
                         let window_type = scanner.next()?;
                         let _ = scanner.next()?; // Command length (swallowed)
-                        MsbtToken::Window {
-                            window_type,
-                            speaker: scanner.next_string_param()?,
-                            variation: if window_type == 0 || window_type == 3 {
-                                Some(scanner.next_string_param()?)
-                            } else {
-                                None
-                            },
+                        if window_type < 8 {
+                            MsbtToken::Window {
+                                window_type,
+                                speaker: scanner.next_string_param()?,
+                                variation: if window_type == 0 || window_type == 3 {
+                                    Some(scanner.next_string_param()?)
+                                } else {
+                                    None
+                                },
+                            }
+                        } else {
+                            MsbtToken::Window2 { window_type }
                         }
                     }
                     4 => {
@@ -232,12 +243,14 @@ fn parse_msbt_tokens(contents: &[u16]) -> Result<Vec<MsbtToken>> {
                     10 => {
                         let localize_type = scanner.next()?;
                         let _ = scanner.next()?; // Command length (swallowed)
-                        if localize_type != 0 {
-                            bail!("expected localize type 0, found {}", localize_type);
-                        }
-                        MsbtToken::Localize {
-                            option1: scanner.next_string_param()?,
-                            option2: scanner.next_string_param()?,
+                        if localize_type == 2 || localize_type == 3 {
+                            MsbtToken::Localize2 { localize_type }
+                        } else {
+                            MsbtToken::Localize {
+                                localize_type,
+                                option1: scanner.next_string_param()?,
+                                option2: scanner.next_string_param()?,
+                            }
                         }
                     }
                     11 => {
@@ -299,6 +312,7 @@ fn pretty_print_tokens(out: &mut String, tokens: &[MsbtToken]) -> Result<()> {
                 Some(v) => write!(out, "$Window({}, \"{}\", \"{}\")", window_type, speaker, v)?,
                 None => write!(out, "$Window({}, \"{}\")", window_type, speaker)?,
             },
+            MsbtToken::Window2 { window_type } => write!(out, "$Window2({})", window_type)?,
             MsbtToken::Wait {
                 wait_type,
                 duration,
@@ -329,9 +343,22 @@ fn pretty_print_tokens(out: &mut String, tokens: &[MsbtToken]) -> Result<()> {
                 None => write!(out, "$Fade({}, {})", fade_type, duration)?,
             },
             MsbtToken::Icon(name) => write!(out, "$Icon(\"{}\")", name)?,
-            MsbtToken::Localize { option1, option2 } => {
-                write!(out, "$G(\"{}\", \"{}\")", option1, option2)?
+            MsbtToken::Localize {
+                localize_type,
+                option1,
+                option2,
+            } => {
+                if *localize_type == 0 {
+                    write!(out, "$G(\"{}\", \"{}\")", option1, option2)?
+                } else {
+                    write!(
+                        out,
+                        "$G(\"{}\", \"{}\", {})",
+                        option1, option2, localize_type
+                    )?
+                }
             }
+            MsbtToken::Localize2 { localize_type } => write!(out, "$G2({})", localize_type)?,
             MsbtToken::PictureShow {
                 unknown,
                 picture,
@@ -440,6 +467,9 @@ pub fn pack_msbt_entry(tokens: &[MsbtToken]) -> Vec<u16> {
                 .string(Some(speaker))
                 .string(variation.as_deref())
                 .pack(&mut packed),
+            MsbtToken::Window2 { window_type } => {
+                CommandPacker::new(0x3, *window_type).pack(&mut packed)
+            }
             MsbtToken::Wait {
                 wait_type,
                 duration,
@@ -488,10 +518,17 @@ pub fn pack_msbt_entry(tokens: &[MsbtToken]) -> Vec<u16> {
             MsbtToken::Icon(icon) => CommandPacker::new(0x8, 0x2)
                 .string(Some(icon))
                 .pack(&mut packed),
-            MsbtToken::Localize { option1, option2 } => CommandPacker::new(0xA, 0x0)
+            MsbtToken::Localize {
+                localize_type,
+                option1,
+                option2,
+            } => CommandPacker::new(0xA, *localize_type)
                 .string(Some(option1))
                 .string(Some(option2))
                 .pack(&mut packed),
+            MsbtToken::Localize2 { localize_type } => {
+                CommandPacker::new(0xA, *localize_type).pack(&mut packed)
+            }
             MsbtToken::PictureShow {
                 unknown,
                 picture,

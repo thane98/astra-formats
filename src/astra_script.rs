@@ -112,6 +112,8 @@ enum Token {
     Type,
     #[token("$Window")]
     Window,
+    #[token("$Window2")]
+    Window2,
     #[token("$Wait")]
     Wait,
     #[token("$Anim")]
@@ -128,6 +130,8 @@ enum Token {
     Icon,
     #[token("$G")]
     Localize,
+    #[token("$G2")]
+    Localize2,
     #[token("$Show")]
     Show,
     #[token("$Hide")]
@@ -136,12 +140,14 @@ enum Token {
     NewLine,
     #[regex("-?\\d*")]
     Number,
-    #[regex("\"[^\"\\n$]*\"")]
+    #[regex("\"[^\"\\r\\n$]*\"")]
     Str,
-    #[regex("\\[[ \t]*[\\w\\d#]+[ \t]*\\]")]
+    #[regex("\\[[ \t]*[a-zA-Z0-9#+_'\"]+[ \t]*\\]")]
     Identifier,
-    #[regex("[^(),$\\d\\n][^$\"\\r\\n\\d]*")]
+    #[regex("[^(),$\\d\\r\\n][^$\"\\r\\n\\d]*")]
     Text,
+    #[regex("\"[^\"\\r\\n$]+\\r\\n")]
+    UnterminatedStrHack,
     Error,
 }
 
@@ -154,6 +160,7 @@ impl Display for Token {
             Token::Arg => f.write_str("$Arg"),
             Token::Type => f.write_str("$Type"),
             Token::Window => f.write_str("$Window"),
+            Token::Window2 => f.write_str("$Window2"),
             Token::Wait => f.write_str("$Wait"),
             Token::Anim => f.write_str("$Anim"),
             Token::Alias => f.write_str("$Alias"),
@@ -162,6 +169,7 @@ impl Display for Token {
             Token::Fade => f.write_str("$Fade"),
             Token::Icon => f.write_str("$Icon"),
             Token::Localize => f.write_str("$G"),
+            Token::Localize2 => f.write_str("$G2"),
             Token::Show => f.write_str("$Show"),
             Token::Hide => f.write_str("$Hide"),
             Token::NewLine => f.write_str("\\n"),
@@ -169,6 +177,7 @@ impl Display for Token {
             Token::Str => f.write_str("string"),
             Token::Identifier => f.write_str("identifier"),
             Token::Text => f.write_str("text"),
+            Token::UnterminatedStrHack => f.write_str("text"),
             Token::Error => f.write_str("error"),
         }
     }
@@ -260,6 +269,12 @@ impl<'source> Parser<'source> {
                         variation,
                     });
                 }
+                Token::Window2 => {
+                    self.expect(Token::LeftParen)?;
+                    let window_type = self.expect_number()? as u16;
+                    self.expect(Token::RightParen)?;
+                    commands.push(MsbtToken::Window2 { window_type });
+                }
                 Token::Wait => {
                     self.expect(Token::LeftParen)?;
                     let wait_type = self.expect_number()? as u16;
@@ -318,8 +333,22 @@ impl<'source> Parser<'source> {
                     let option1 = self.expect_string()?;
                     self.expect(Token::Comma)?;
                     let option2 = self.expect_string()?;
+                    let localize_type = self
+                        .next_optional(Parser::expect_number)?
+                        .map(|v| v as u16)
+                        .unwrap_or(0);
                     self.expect(Token::RightParen)?;
-                    commands.push(MsbtToken::Localize { option1, option2 });
+                    commands.push(MsbtToken::Localize {
+                        localize_type,
+                        option1,
+                        option2,
+                    });
+                }
+                Token::Localize2 => {
+                    self.expect(Token::LeftParen)?;
+                    let localize_type = self.expect_number()? as u16;
+                    self.expect(Token::RightParen)?;
+                    commands.push(MsbtToken::Localize2 { localize_type });
                 }
                 Token::Show => {
                     self.expect(Token::LeftParen)?;
@@ -346,6 +375,7 @@ impl<'source> Parser<'source> {
                 Token::NewLine => commands.push(MsbtToken::NewLine),
                 Token::Text
                 | Token::Str
+                | Token::UnterminatedStrHack
                 | Token::Number
                 | Token::LeftParen
                 | Token::RightParen
