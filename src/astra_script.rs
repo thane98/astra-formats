@@ -538,3 +538,26 @@ pub fn pack_astra_script(source: &str) -> Result<IndexMap<String, Vec<u16>>> {
     let entries = parse_astra_script(source)?;
     Ok(crate::pack_msbt_entries(&entries))
 }
+
+/// Convert between script entries (organized in a map) and a single script.
+/// Currently does NOT validate key or value, so you can break this if you're trying to.
+pub fn convert_entries_to_astra_script(
+    entries: &IndexMap<String, String>,
+) -> anyhow::Result<String> {
+    let mut output = String::new();
+    for (k, v) in entries {
+        writeln!(output, "[{}]", k)?;
+        writeln!(output, "{}", v)?;
+        writeln!(output)?;
+    }
+    Ok(output)
+}
+
+/// Convert an Astra script (one string containing all entries) to a key / value map.
+pub fn convert_astra_script_to_entries(script: &str) -> anyhow::Result<IndexMap<String, String>> {
+    let mut converted = IndexMap::new();
+    for (k, v) in parse_astra_script(script)? {
+        converted.insert(k, crate::pretty_print_tokenized_msbt_entry(&v)?);
+    }
+    Ok(converted)
+}

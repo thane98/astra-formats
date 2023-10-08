@@ -35,10 +35,12 @@ mod msbt_script;
 
 #[cfg(feature = "msbt_script")]
 pub use astra_script::{
-    pack_astra_script, parse_astra_script, parse_astra_script_entry, ParseError,
+    convert_astra_script_to_entries, convert_entries_to_astra_script, pack_astra_script,
+    parse_astra_script, parse_astra_script_entry, ParseError,
 };
 
 #[cfg(feature = "msbt_script")]
 pub use msbt_script::{
-    pack_msbt_entries, pack_msbt_entry, parse_msbt_entry, parse_msbt_script, MsbtToken,
+    pack_msbt_entries, pack_msbt_entry, parse_msbt_entry, parse_msbt_script,
+    pretty_print_tokenized_msbt_entry, MsbtToken,
 };

@@ -287,6 +287,12 @@ fn parse_msbt_tokens(contents: &[u16]) -> Result<Vec<MsbtToken>> {
     Ok(tokens)
 }
 
+pub fn pretty_print_tokenized_msbt_entry(tokens: &[MsbtToken]) -> Result<String> {
+    let mut out = String::new();
+    pretty_print_tokens(&mut out, tokens)?;
+    Ok(out)
+}
+
 fn pretty_print(out: &mut String, key: &str, tokens: &[MsbtToken]) -> Result<()> {
     writeln!(out, "[{}]", key)?;
     pretty_print_tokens(out, tokens)?;
