@@ -310,6 +310,7 @@ impl From<&BundleFile> for BundleFileType {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum BundleFile {
     Raw(Vec<u8>),
     Assets(AssetFile),
@@ -354,6 +355,27 @@ impl TextBundle {
             let (text, _) = UTF_8.decode_with_bom_removal(&data);
             text.to_string()
         })
+    }
+
+    pub fn get_asset_name(&self) -> Result<String> {
+        self.0
+            .files
+            .values()
+            .find_map(|file| {
+                if let BundleFile::Assets(assets_file) = file {
+                    Some(assets_file)
+                } else {
+                    None
+                }
+            })
+            .and_then(|assets_file| assets_file.assets.iter().find_map(|asset| {
+                if let Asset::Text(text) = asset {
+                    Some(text.name.0.clone())
+                } else {
+                    None
+                }
+            }))
+            .ok_or_else(|| anyhow!("bundle does not contain any text assets"))
     }
 
     pub fn replace_raw(&mut self, new_data: Vec<u8>) -> Result<()> {

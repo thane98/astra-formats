@@ -891,7 +891,7 @@ where
     fn clone(&self) -> Self {
         Self {
             game_object: self.game_object.clone(),
-            enabled: self.enabled.clone(),
+            enabled: self.enabled,
             script: self.script.clone(),
             name: self.name.clone(),
             data: self.data.clone(),
