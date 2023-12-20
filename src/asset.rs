@@ -74,6 +74,36 @@ pub struct AssetFile {
     pub assets: Vec<Asset>,
 }
 
+impl AssetFile {
+    pub fn get_asset_by_path_id(&self, path_id: i64) -> Option<&Asset> {
+        let index = self
+            .path_ids
+            .iter()
+            .enumerate()
+            .find_map(|(index, elem)| (*elem as i64 == path_id).then_some(index))?;
+        self.object_order
+            .iter()
+            .enumerate()
+            .find_map(|(actual_index, elem)| {
+                (*elem == index).then(|| self.assets.get(actual_index))
+            })
+            .flatten()
+    }
+
+    pub fn get_asset_by_path_id_mut(&mut self, path_id: i64) -> Option<&mut Asset> {
+        let index = self
+            .path_ids
+            .iter()
+            .enumerate()
+            .find_map(|(index, elem)| (*elem as i64 == path_id).then_some(index))?;
+        let actual_index = self.object_order
+            .iter()
+            .enumerate()
+            .find_map(|(actual_index, elem)| (*elem == index).then_some(actual_index))?;
+        self.assets.get_mut(actual_index)
+    }
+}
+
 impl BinWrite for AssetFile {
     type Args<'a> = ();
 
@@ -453,7 +483,7 @@ pub enum Asset {
     SkinnedMeshRenderer(SkinnedMeshRenderer),
     SpringJob(MonoBehavior<SpringJob>),
     SpringBone(MonoBehavior<SpringBone>),
-    Unparsed(Unparsed)
+    Unparsed(Unparsed),
 }
 
 impl Asset {
@@ -527,9 +557,11 @@ impl BinRead for Asset {
             SPRING_BONE_MONO_BEHAVIOR_HASH => {
                 MonoBehavior::<SpringBone>::read_options(reader, endian, ()).map(Self::SpringBone)
             }
-            _ => {
-                Ok(Self::Unparsed(Unparsed { type_hash, path_id: pptr, blob: binrw::until_eof(reader, endian, ())? }))
-            },
+            _ => Ok(Self::Unparsed(Unparsed {
+                type_hash,
+                path_id: pptr,
+                blob: binrw::until_eof(reader, endian, ())?,
+            })),
         }
     }
 }
