@@ -68,9 +68,9 @@ impl Bundle {
                     blob.extend(output_buffer);
                 }
                 2 | 3 => {
-                    blob.extend(lz4::block::decompress(
+                    blob.extend(lz4_flex::block::decompress(
                         &buffer,
-                        Some(block.decompressed_size as i32),
+                        block.decompressed_size as usize,
                     )?);
                 }
                 _ => bail!("unsupported compression type '{}'", block.flags & 0x3F),
@@ -129,7 +129,7 @@ impl Bundle {
                     .context("LZMA decompression failed")?;
                 output_buffer
             }
-            2 | 3 => lz4::block::decompress(&buffer, Some(header.decompressed_size as i32))
+            2 | 3 => lz4_flex::block::decompress(&buffer, header.decompressed_size as usize)
                 .context("LZ4 decompression failed")?,
             _ => bail!("unsupported compression type '{}'", header.flags & 0x3F),
         };
@@ -172,7 +172,7 @@ impl Bundle {
         for chunk_start in (0..uncompressed_blob.len()).step_by(0x20000) {
             let chunk_end = (chunk_start + 0x20000).min(uncompressed_blob.len());
             let chunk_buffer =
-                lz4::block::compress(&uncompressed_blob[chunk_start..chunk_end], None, false)?;
+                lz4_flex::block::compress(&uncompressed_blob[chunk_start..chunk_end]);
             blocks.push(Block {
                 decompressed_size: (chunk_end - chunk_start) as u32,
                 compressed_size: chunk_buffer.len() as u32,
