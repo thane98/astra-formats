@@ -8,7 +8,6 @@ use crate::{
 use anyhow::{anyhow, bail, Result};
 use astc_decode::Footprint;
 use image::{DynamicImage, GrayImage, RgbaImage};
-use tegra_swizzle::BlockHeight;
 
 pub struct SpriteAtlasWrapper {
     pub textures: HashMap<i64, DynamicImage>,
@@ -135,12 +134,14 @@ fn decode(texture: &Texture2D, image_data: &[u8]) -> Result<DynamicImage> {
         _ => bail!("unsupported texture format '{:?}'", texture.texture_format),
     };
 
+    let block_height_mip0 = tegra_swizzle::block_height_mip0(tegra_swizzle::div_round_up(height, block_height));
+
     let input = tegra_swizzle::swizzle::deswizzle_block_linear(
         tegra_swizzle::div_round_up(width, block_width),
         tegra_swizzle::div_round_up(height, block_height),
         1,
         image_data,
-        BlockHeight::Sixteen,
+        block_height_mip0,
         bytes_per_pixel,
     )?;
 

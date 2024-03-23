@@ -96,7 +96,8 @@ impl AssetFile {
             .iter()
             .enumerate()
             .find_map(|(index, elem)| (*elem as i64 == path_id).then_some(index))?;
-        let actual_index = self.object_order
+        let actual_index = self
+            .object_order
             .iter()
             .enumerate()
             .find_map(|(actual_index, elem)| (*elem == index).then_some(actual_index))?;

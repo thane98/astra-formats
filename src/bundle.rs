@@ -83,7 +83,7 @@ impl Bundle {
             let end = (node.offset + node.size) as usize;
             // FAILSAFE: Some nodes appear to be of size 0, so we skip them (users manually toying with resS?)
             if end - start == 0 {
-                continue
+                continue;
             }
             if end > blob.len() || start >= blob.len() {
                 bail!("corrupted file offset/size for node '{}'", node.path);
@@ -110,7 +110,9 @@ impl Bundle {
         let mut buffer = vec![0; header.compressed_size as usize];
         if header.flags & 0x80 != 0 {
             let position = reader.stream_position()?;
-            reader.seek(SeekFrom::Start(header.file_size - header.compressed_size as u64))?;
+            reader.seek(SeekFrom::Start(
+                header.file_size - header.compressed_size as u64,
+            ))?;
             reader.read_exact(&mut buffer)?;
             reader.seek(SeekFrom::Start(position))?;
         } else {
@@ -368,13 +370,15 @@ impl TextBundle {
                     None
                 }
             })
-            .and_then(|assets_file| assets_file.assets.iter().find_map(|asset| {
-                if let Asset::Text(text) = asset {
-                    Some(text.name.0.clone())
-                } else {
-                    None
-                }
-            }))
+            .and_then(|assets_file| {
+                assets_file.assets.iter().find_map(|asset| {
+                    if let Asset::Text(text) = asset {
+                        Some(text.name.0.clone())
+                    } else {
+                        None
+                    }
+                })
+            })
             .ok_or_else(|| anyhow!("bundle does not contain any text assets"))
     }
 
