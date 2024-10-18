@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::io::{BufReader, Cursor, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
@@ -15,6 +16,13 @@ use crate::{
     pack_astra_script, pack_msbt_entry, parse_astra_script_entry, parse_msbt_entry,
     parse_msbt_script,
 };
+
+#[derive(Debug, Clone, Copy)]
+pub enum CompressionType {
+    Lz4,
+    Lzma,
+    Uncompressed,
+}
 
 #[derive(Debug)]
 pub struct Bundle {
@@ -147,6 +155,16 @@ impl Bundle {
     }
 
     pub fn serialize(&self) -> Result<Vec<u8>> {
+        self.serialize_with_block_compression(CompressionType::Uncompressed)
+    }
+
+    pub fn serialize_with_block_compression(&self, compression_type: CompressionType) -> Result<Vec<u8>> {
+        let compression_flag = match compression_type {
+            CompressionType::Lz4 => 3,
+            CompressionType::Lzma => 1,
+            CompressionType::Uncompressed => 0,
+        };
+
         // Combine files into a single buffer and build node data.
         let mut nodes = vec![];
         let mut uncompressed_blob = vec![];
@@ -173,14 +191,17 @@ impl Bundle {
         let mut blocks = vec![];
         for chunk_start in (0..uncompressed_blob.len()).step_by(0x20000) {
             let chunk_end = (chunk_start + 0x20000).min(uncompressed_blob.len());
-            let chunk_buffer =
-                lz4_flex::block::compress(&uncompressed_blob[chunk_start..chunk_end]);
+            let chunk_buffer: Cow<[u8]> = match compression_type {
+                CompressionType::Lz4 => Cow::Owned(lz4_flex::block::compress(&uncompressed_blob[chunk_start..chunk_end])),
+                CompressionType::Lzma => bail!("LZMA compression is not supported yet"),
+                CompressionType::Uncompressed => Cow::Borrowed(&uncompressed_blob[chunk_start..chunk_end]),
+            };
             blocks.push(Block {
                 decompressed_size: (chunk_end - chunk_start) as u32,
                 compressed_size: chunk_buffer.len() as u32,
-                flags: 0x3,
+                flags: compression_flag,
             });
-            compressed_blob.extend(chunk_buffer);
+            compressed_blob.extend(chunk_buffer.iter());
         }
         uncompressed_blob.clear(); // Large buffer. Clear to reduce memory pressure.
 
