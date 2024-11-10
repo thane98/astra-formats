@@ -1335,6 +1335,7 @@ pub struct BlendShapeVertex {
 #[binrw]
 #[derive(Debug)]
 pub struct MeshBlendShape {
+    #[brw(align_before = 4)]
     pub first_vertex: u32,
     pub vertex_count: u32,
     pub has_normals: u8,
