@@ -4,7 +4,7 @@ use std::ops::{Deref, DerefMut};
 
 use anyhow::{bail, Result};
 use binrw::meta::{EndianKind, ReadEndian, WriteEndian};
-use binrw::{binread, binrw, binwrite, BinRead, BinResult, BinWrite, Endian, NullString};
+use binrw::{binread, binrw, BinRead, BinResult, BinWrite, Endian, NullString};
 use byteorder::{BigEndian, WriteBytesExt};
 use encoding_rs::UTF_8;
 use itertools::{izip, Itertools};
@@ -1915,18 +1915,6 @@ pub struct PPtrCurve {
     pub rotation_order: i32,
 }
 
-// #[binrw]
-// #[derive(Debug)]
-// pub struct Keyframe<T: std::fmt::Debug  + binrw::BinWrite> {
-//     pub time: f32,
-//     pub value: T,
-//     pub in_slope: T,
-//     pub out_slope: T,
-//     pub weighted_mode: i32,
-//     pub in_weight: T,
-//     pub out_weight: T,
-// }
-
 #[binrw]
 #[derive(Debug)]
 pub struct QuaternionCurveKeyframe {
@@ -1992,8 +1980,8 @@ pub struct HumanPose {
     pub goal_array: UArray<HumanGoal>,
     pub left_hand_pose: HandPose,
     pub right_hand_pose: HandPose,
-    pub DoF_array: UArray<f32>,
-    pub T_DoF_array: UArray<Vector3f>,
+    pub dof_array: UArray<f32>,
+    pub t_dof_array: UArray<Vector3f>,
 }
 
 #[binrw]
@@ -2062,7 +2050,6 @@ pub struct Clip {
     pub streamed_clip: StreamedClip,
     pub dense_clip: DenseClip,
     pub constant_clip: ConstantClip,
-    // pub binding: ValueArrayConstant,
 }
 
 #[binrw]
@@ -2080,8 +2067,8 @@ pub struct GenericBinding {
     pub script: PPtr,
     pub type_id: u32,
     pub custom_type: u8,
-    pub isPPtrCurve: u8,
-    pub isIntCurve: u8,
+    pub is_pptr_curve: u8,
+    pub is_int_curve: u8,
 }
 
 #[binrw]
