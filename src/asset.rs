@@ -750,13 +750,20 @@ impl BinRead for UString {
         endian: Endian,
         _: Self::Args<'_>,
     ) -> BinResult<Self> {
-        let position = reader.stream_position()? as i64;
+        let mut position = reader.stream_position()? as i64;
         if position % 4 != 0 {
             reader.seek(SeekFrom::Current(4 - position % 4))?;
         }
         let count: u32 = <_>::read_options(reader, endian, ())?;
         let mut buffer = vec![0; count as usize];
         reader.read_exact(&mut buffer)?;
+
+        // Align after reading the sized String because if a UArray with a UString as the key is being read, the following structure won't be aligned
+        position = reader.stream_position()? as i64;
+        if position % 4 != 0 {
+            reader.seek(SeekFrom::Current(4 - position % 4))?;
+        }
+
         let (cow, _) = UTF_8.decode_with_bom_removal(&buffer);
         Ok(Self(cow.to_string()))
     }
