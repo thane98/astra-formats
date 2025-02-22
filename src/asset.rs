@@ -781,6 +781,7 @@ impl BinWrite for UString {
         write_padding(writer, 4)?;
         (self.len() as u32).write_options(writer, endian, ())?;
         writer.write_all(self.0.as_bytes())?;
+        write_padding(writer, 4)?;
         Ok(())
     }
 }
