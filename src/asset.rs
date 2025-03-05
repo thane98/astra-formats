@@ -219,7 +219,11 @@ fn read_assets<R: Read + Seek>(
         assets.push(Asset::read_options(
             reader,
             endian,
-            (ty.type_hash, obj.path_id),
+            AssetReadOptions {
+                size: obj.size as usize,
+                type_hash: ty.type_hash,
+                pptr: obj.path_id,
+            },
         )?);
     }
     Ok(assets)
@@ -463,6 +467,12 @@ pub struct AssetExternal {
     pub path: NullString,
 }
 
+pub struct AssetReadOptions {
+    size: usize,
+    type_hash: i128,
+    pptr: u64,
+}
+
 #[derive(Debug, BinWrite)]
 pub enum Asset {
     Bundle(AssetBundle),
@@ -515,14 +525,14 @@ impl Asset {
 }
 
 impl BinRead for Asset {
-    type Args<'a> = (i128, u64);
+    type Args<'a> = AssetReadOptions;
 
     fn read_options<R: Read + Seek>(
         reader: &mut R,
         endian: Endian,
         args: Self::Args<'_>,
     ) -> BinResult<Self> {
-        let (type_hash, pptr) = args;
+        let AssetReadOptions { size, type_hash, pptr } = args;
         match type_hash {
             ASSET_BUNDLE_HASH => AssetBundle::read_options(reader, endian, ()).map(Self::Bundle),
             TEXT_ASSET_HASH => TextAsset::read_options(reader, endian, ()).map(Self::Text),
@@ -558,11 +568,15 @@ impl BinRead for Asset {
             SPRING_BONE_MONO_BEHAVIOR_HASH => {
                 MonoBehavior::<SpringBone>::read_options(reader, endian, ()).map(Self::SpringBone)
             }
-            _ => Ok(Self::Unparsed(Unparsed {
-                type_hash,
-                path_id: pptr,
-                blob: binrw::until_eof(reader, endian, ())?,
-            })),
+            _ => {
+                let mut blob = vec![0; size];
+                reader.read_exact(&mut blob)?;
+                Ok(Self::Unparsed(Unparsed {
+                    type_hash,
+                    path_id: pptr,
+                    blob,
+                }))
+            },
         }
     }
 }
