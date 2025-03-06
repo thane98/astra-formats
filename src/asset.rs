@@ -574,11 +574,6 @@ impl BinRead for Asset {
             ANIMATION_CLIP_HASH => {
                 AnimationClip::read_options(reader, endian, ()).map(Self::AnimationClip)
              }
-             _ => Ok(Self::Unparsed(Unparsed {
-                 type_hash,
-                 path_id: pptr,
-                 blob: binrw::until_eof(reader, endian, ())?,
-             })),
             _ => {
                 let mut blob = vec![0; size];
                 reader.read_exact(&mut blob)?;
