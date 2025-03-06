@@ -28,6 +28,7 @@ pub const TEXTURE_2D_HASH: i128 = 51401989309282493850807588349188048909;
 pub const SPRITE_HASH: i128 = 45701628647153051529734544331337206412;
 pub const SPRITE_ATLAS_HASH: i128 = -21517008777126347833343678527744186422;
 pub const TERRAIN_MONO_BEHAVIOR_TYPE_HASH: i128 = 161821592088346330348225465071444734321;
+pub const ANIMATION_CLIP_HASH: i128 = -80937412517696055409803870673809846754;
 
 fn write_padding<W: Write + Seek>(writer: &mut W, align: u64) -> BinResult<()> {
     while writer.stream_position()? % align != 0 {
@@ -494,6 +495,7 @@ pub enum Asset {
     SkinnedMeshRenderer(SkinnedMeshRenderer),
     SpringJob(MonoBehavior<SpringJob>),
     SpringBone(MonoBehavior<SpringBone>),
+    AnimationClip(AnimationClip),
     Unparsed(Unparsed),
 }
 
@@ -519,6 +521,7 @@ impl Asset {
             Asset::SkinnedMeshRenderer(_) => SKINNED_MESH_RENDERER_HASH,
             Asset::SpringJob(_) => SPRING_JOB_MONO_BEHAVIOR_HASH,
             Asset::SpringBone(_) => SPRING_BONE_MONO_BEHAVIOR_HASH,
+            Asset::AnimationClip(_) => ANIMATION_CLIP_HASH,
             Asset::Unparsed(blob) => blob.type_hash,
         }
     }
@@ -568,6 +571,9 @@ impl BinRead for Asset {
             SPRING_BONE_MONO_BEHAVIOR_HASH => {
                 MonoBehavior::<SpringBone>::read_options(reader, endian, ()).map(Self::SpringBone)
             }
+            ANIMATION_CLIP_HASH => {
+                AnimationClip::read_options(reader, endian, ()).map(Self::AnimationClip)
+             }
             _ => {
                 let mut blob = vec![0; size];
                 reader.read_exact(&mut blob)?;
@@ -739,13 +745,20 @@ impl BinRead for UString {
         endian: Endian,
         _: Self::Args<'_>,
     ) -> BinResult<Self> {
-        let position = reader.stream_position()? as i64;
+        let mut position = reader.stream_position()? as i64;
         if position % 4 != 0 {
             reader.seek(SeekFrom::Current(4 - position % 4))?;
         }
         let count: u32 = <_>::read_options(reader, endian, ())?;
         let mut buffer = vec![0; count as usize];
         reader.read_exact(&mut buffer)?;
+
+        // Align after reading the sized String because if a UArray with a UString as the key is being read, the following structure won't be aligned
+        position = reader.stream_position()? as i64;
+        if position % 4 != 0 {
+            reader.seek(SeekFrom::Current(4 - position % 4))?;
+        }
+
         let (cow, _) = UTF_8.decode_with_bom_removal(&buffer);
         Ok(Self(cow.to_string()))
     }
@@ -763,6 +776,7 @@ impl BinWrite for UString {
         write_padding(writer, 4)?;
         (self.len() as u32).write_options(writer, endian, ())?;
         writer.write_all(self.0.as_bytes())?;
+        write_padding(writer, 4)?;
         Ok(())
     }
 }
@@ -1798,4 +1812,283 @@ pub struct SpringBone {
     pub sphere_colliders: UArray<PPtr>,
     pub capsule_colliders: UArray<PPtr>,
     pub panel_colliders: UArray<PPtr>,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct AnimationClip {
+    pub name: UString,
+    #[brw(align_before = 4)]
+    pub legacy: u8,
+    pub compressed: u8,
+    pub use_high_quality_curves: u8,
+    #[brw(align_before = 4)]
+    pub rotation_curves: UArray<QuaternionCurve>,
+    pub compressed_rotation_curves: UArray<CompressedAnimationCurve>,
+    pub euler_curves: UArray<Vector3Curve>,
+    pub position_curves: UArray<Vector3Curve>,
+    pub scale_curves: UArray<Vector3Curve>,
+    pub float_curves: UArray<FloatCurve>,
+    pub pptr_curves: UArray<PPtrCurve>,
+    pub sample_rate: f32,
+    pub wrap_mode: i32,
+    pub local_bounds: AABB,
+    pub muscle_clip_size: u32,
+    pub muscle_clip: ClipMuscleConstant,
+    pub clip_binding_constant: AnimationClipBindingConstant,
+    pub has_generic_root_transform: u8,
+    pub has_motion_float_curves: u8,
+    #[brw(align_before = 4)]
+    pub events: UArray<AnimationEvent>,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct ClipMuscleConstant {
+    pub delta_pose: HumanPose,
+    pub start_x: XForm,
+    pub stop_x: XForm, 
+    pub left_foot_start_x: XForm,
+    pub right_foot_start_x: XForm,
+    pub average_speed: Vector3f,
+    pub clip: Clip,
+    pub start_time: f32,
+    pub stop_time: f32,
+    pub orientation_offset_y: f32,
+    pub level: f32,
+    pub cycle_offset: f32,
+    pub average_angular_speed: f32,
+    pub index_array: UArray<i32>,
+    pub value_array_delta: UArray<ValueDelta>,
+    pub value_array_reference_pose: UArray<f32>,
+    pub mirror: u8,
+    pub loop_time: u8,
+    pub loop_blend: u8,
+    pub loop_blend_orientation: u8,
+    pub loop_blend_position_y: u8,
+    pub loop_blend_position_xz: u8,
+    pub start_at_origin: u8,
+    pub keep_original_orientation: u8,
+    pub keep_original_position_y: u8,
+    pub keep_original_position_xz: u8,
+    pub height_from_feet: u8,
+}
+
+
+#[binrw]
+#[derive(Debug)]
+pub struct QuaternionCurve {
+    pub curve: QuaternionAnimationCurve,
+    pub path: UString,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct QuaternionAnimationCurve {
+    pub curve: UArray<QuaternionCurveKeyframe>,
+    pub pre_infinity: i32,
+    pub post_infinity: i32,
+    pub rotation_order: i32,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct Vector3Curve {
+    pub curve: UArray<Vector3f>,
+    pub pre_infinity: i32,
+    pub post_infinity: i32,
+    pub rotation_order: i32,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct FloatCurve {
+    pub curve: UArray<f32>,
+    pub pre_infinity: i32,
+    pub post_infinity: i32,
+    pub rotation_order: i32,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct PPtrCurve {
+    pub curve: UArray<PPtr>,
+    pub pre_infinity: i32,
+    pub post_infinity: i32,
+    pub rotation_order: i32,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct QuaternionCurveKeyframe {
+    pub time: f32,
+    pub value: Quaternionf,
+    pub in_slope: Quaternionf,
+    pub out_slope: Quaternionf,
+    pub weighted_mode: i32,
+    pub in_weight: Quaternionf,
+    pub out_weight: Quaternionf,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct CompressedAnimationCurve {
+    pub path: UString,
+    pub times: PackedIntVector,
+    pub values: PackedFloatVector,
+    pub slopes: PackedFloatVector,
+    pub pre_infinity: i32,
+    pub post_infinity: i32,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct PackedIntVector {
+    pub num_items: u32,
+    pub data: UArray<u8>,
+    pub bit_size: u8,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct PackdQuatVector {
+    pub num_items: u32,
+    pub data: UArray<u8>,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct PackedFloatVector {
+    pub num_items: u32,
+    pub range: f32,
+    pub start: f32,
+    pub data: UArray<u8>,
+    pub bit_size: u8,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct XForm {
+    pub t: Vector3f,
+    pub q: Quaternionf,
+    pub scale: Vector3f,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct HumanPose {
+    pub root_x: XForm,
+    pub look_at_position: Vector3f,
+    pub look_at_weight: Vector4f,
+    pub goal_array: UArray<HumanGoal>,
+    pub left_hand_pose: HandPose,
+    pub right_hand_pose: HandPose,
+    pub dof_array: UArray<f32>,
+    pub t_dof_array: UArray<Vector3f>,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct HumanGoal {
+    pub x: XForm,
+    pub weight_t: f32,
+    pub weight_r: f32,
+    pub hint_t: Vector3f,
+    pub hint_weight_t: f32,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct HandPose {
+    pub grab_x: XForm,
+    pub do_f_array: UArray<f32>,
+    pub m_override: f32,
+    pub close_open: f32,
+    pub in_out: f32,
+    pub grab: f32,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct StreamedClip {
+    data: UArray<u32>,
+    curve_count: u32,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct DenseClip {
+    frame_count: i32,
+    curve_count: u32,
+    sample_rate: f32,
+    begin_time: f32,
+    sample_array: UArray<f32>,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct ConstantClip {
+    data: UArray<f32>,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct ValueConstant {
+    pub id: u32,
+    pub type_id: u32,
+    pub m_type: u32,
+    pub index: u32,
+}
+
+
+#[binrw]
+#[derive(Debug)]
+pub struct ValueArrayConstant {
+    pub value_array: UArray<ValueConstant>,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct Clip {
+    pub streamed_clip: StreamedClip,
+    pub dense_clip: DenseClip,
+    pub constant_clip: ConstantClip,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct ValueDelta {
+    pub start: f32,
+    pub stop: f32,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct GenericBinding {
+    pub path: u32,
+    pub attribute: u32,
+    pub script: PPtr,
+    pub type_id: u32,
+    pub custom_type: u8,
+    pub is_pptr_curve: u8,
+    pub is_int_curve: u8,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct AnimationClipBindingConstant {
+    pub generic_bindings: UArray<GenericBinding>,
+    pub pptr_curve_mappings: UArray<PPtr>
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct AnimationEvent {
+    pub time: f32,
+    pub function_name: UString,
+    pub data: UString,
+    pub object_reference_parameter: PPtr,
+    pub float_parameter: f32,
+    pub int_parameter: i32,
+    pub message_options: i32
 }
