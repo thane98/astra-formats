@@ -54,11 +54,11 @@ pub struct AssetFile {
     #[br(align_after = 4, temp)]
     object_count: u32,
     #[br(count = object_count, temp)]
-    pub objects: Vec<AssetFileObject>,
+    objects: Vec<AssetFileObject>,
     #[br(calc = objects.iter().map(|obj| obj.path_id).collect())]
     pub path_ids: Vec<u64>,
     #[br(calc = calculate_object_order(&objects))]
-    pub object_order: Vec<usize>,
+    object_order: Vec<usize>,
 
     #[br(temp)]
     script_count: u32,
@@ -2109,7 +2109,6 @@ pub struct AnimationEvent {
 #[derive(Debug)]
 pub struct AnimatorOverrideController {
     pub name: UString,
-    #[brw(align_before = 4)]
     pub controller: PPtr,
     pub clips: UArray<AnimationClipOverride>,
 }
@@ -2125,7 +2124,7 @@ pub struct AnimationClipOverride {
 #[derive(Debug)]
 pub struct AnimatorController {
     pub name: UString,
-    // read to end of file
+    // Body yet needed
     #[br(parse_with = until_eof)]
     data: Vec<u8>,
 }
