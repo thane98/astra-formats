@@ -2124,7 +2124,7 @@ pub struct AnimationClipOverride {
 #[derive(Debug)]
 pub struct AnimatorController {
     pub name: UString,
-    // Body yet needed
+    // Body not yet needed
     #[br(parse_with = until_eof)]
     data: Vec<u8>,
 }
