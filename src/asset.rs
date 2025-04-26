@@ -4,7 +4,7 @@ use std::ops::{Deref, DerefMut};
 
 use anyhow::{bail, Result};
 use binrw::meta::{EndianKind, ReadEndian, WriteEndian};
-use binrw::{binread, binrw, until_eof, BinRead, BinResult, BinWrite, Endian, NullString};
+use binrw::{binread, binrw, BinRead, BinResult, BinWrite, Endian, NullString};
 use byteorder::{BigEndian, WriteBytesExt};
 use encoding_rs::UTF_8;
 use itertools::{izip, Itertools};
@@ -584,7 +584,18 @@ impl BinRead for Asset {
                 AnimatorOverrideController::read_options(reader, endian, ()).map(Self::AnimatorOverrideController)
             }
             ANIMATOR_CONTROLLER_HASH => {
-                AnimatorController::read_options(reader, endian, ()).map(Self::AnimatorController)
+                let reader_position = reader.stream_position()?;
+                let name: UString = BinRead::read_options(reader, endian, ())?;
+                let reader_position_after_name = reader.stream_position()?;
+
+                // account for the shift from after reading the name.
+                let remaining_size = size - (reader_position_after_name - reader_position) as usize;
+                let mut blob = vec![0; remaining_size];
+                reader.read_exact(&mut blob)?;
+                Ok(Self::AnimatorController(AnimatorController {
+                    name,
+                    blob,
+                }))
             }
             _ => {
                 let mut blob = vec![0; size];
@@ -2124,7 +2135,6 @@ pub struct AnimationClipOverride {
 #[derive(Debug)]
 pub struct AnimatorController {
     pub name: UString,
-    // Body not yet needed
-    #[br(parse_with = until_eof)]
-    data: Vec<u8>,
+    #[br(ignore)]
+    pub blob: Vec<u8>,
 }
