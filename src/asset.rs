@@ -29,6 +29,8 @@ pub const SPRITE_HASH: i128 = 45701628647153051529734544331337206412;
 pub const SPRITE_ATLAS_HASH: i128 = -21517008777126347833343678527744186422;
 pub const TERRAIN_MONO_BEHAVIOR_TYPE_HASH: i128 = 161821592088346330348225465071444734321;
 pub const ANIMATION_CLIP_HASH: i128 = -80937412517696055409803870673809846754;
+pub const ANIMATOR_OVERRIDE_CONTROLLER_HASH: i128 = -102229199973352171437435367599983726207;
+pub const ANIMATOR_CONTROLLER_HASH: i128 = -115873685307230980538653717616089922820;
 
 fn write_padding<W: Write + Seek>(writer: &mut W, align: u64) -> BinResult<()> {
     while writer.stream_position()? % align != 0 {
@@ -54,7 +56,7 @@ pub struct AssetFile {
     #[br(count = object_count, temp)]
     objects: Vec<AssetFileObject>,
     #[br(calc = objects.iter().map(|obj| obj.path_id).collect())]
-    path_ids: Vec<u64>,
+    pub path_ids: Vec<u64>,
     #[br(calc = calculate_object_order(&objects))]
     object_order: Vec<usize>,
 
@@ -496,6 +498,8 @@ pub enum Asset {
     SpringJob(MonoBehavior<SpringJob>),
     SpringBone(MonoBehavior<SpringBone>),
     AnimationClip(AnimationClip),
+    AnimatorOverrideController(AnimatorOverrideController),
+    AnimatorController(AnimatorController),
     Unparsed(Unparsed),
 }
 
@@ -522,6 +526,8 @@ impl Asset {
             Asset::SpringJob(_) => SPRING_JOB_MONO_BEHAVIOR_HASH,
             Asset::SpringBone(_) => SPRING_BONE_MONO_BEHAVIOR_HASH,
             Asset::AnimationClip(_) => ANIMATION_CLIP_HASH,
+            Asset::AnimatorOverrideController(_) => ANIMATOR_OVERRIDE_CONTROLLER_HASH,
+            Asset::AnimatorController(_) => ANIMATOR_CONTROLLER_HASH,
             Asset::Unparsed(blob) => blob.type_hash,
         }
     }
@@ -573,7 +579,24 @@ impl BinRead for Asset {
             }
             ANIMATION_CLIP_HASH => {
                 AnimationClip::read_options(reader, endian, ()).map(Self::AnimationClip)
-             }
+            }
+            ANIMATOR_OVERRIDE_CONTROLLER_HASH => {
+                AnimatorOverrideController::read_options(reader, endian, ()).map(Self::AnimatorOverrideController)
+            }
+            ANIMATOR_CONTROLLER_HASH => {
+                let reader_position = reader.stream_position()?;
+                let name: UString = BinRead::read_options(reader, endian, ())?;
+                let reader_position_after_name = reader.stream_position()?;
+
+                // account for the shift from after reading the name.
+                let remaining_size = size - (reader_position_after_name - reader_position) as usize;
+                let mut blob = vec![0; remaining_size];
+                reader.read_exact(&mut blob)?;
+                Ok(Self::AnimatorController(AnimatorController {
+                    name,
+                    blob,
+                }))
+            }
             _ => {
                 let mut blob = vec![0; size];
                 reader.read_exact(&mut blob)?;
@@ -2091,4 +2114,27 @@ pub struct AnimationEvent {
     pub float_parameter: f32,
     pub int_parameter: i32,
     pub message_options: i32
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct AnimatorOverrideController {
+    pub name: UString,
+    pub controller: PPtr,
+    pub clips: UArray<AnimationClipOverride>,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct AnimationClipOverride {
+    pub original_clip: PPtr,
+    pub override_clip: PPtr,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct AnimatorController {
+    pub name: UString,
+    #[br(ignore)]
+    pub blob: Vec<u8>,
 }
