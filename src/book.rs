@@ -367,18 +367,15 @@ pub trait ToSheetDataParam {
 }
 
 pub trait ToSheetParamAttribute {
-    fn to_sheet_param_attribute(&self) -> String;
+    fn to_sheet_param_attribute(&self) -> Option<String>;
 }
 
 impl<T> ToSheetParamAttribute for Option<T>
 where
     T: ToString,
 {
-    fn to_sheet_param_attribute(&self) -> String {
-        match self {
-            Some(value) => value.to_string(),
-            None => String::new(),
-        }
+    fn to_sheet_param_attribute(&self) -> Option<String> {
+        self.as_ref().map(|v| v.to_string())
     }
 }
 
@@ -386,24 +383,24 @@ impl<T> ToSheetParamAttribute for Vec<T>
 where
     T: ToString,
 {
-    fn to_sheet_param_attribute(&self) -> String {
+    fn to_sheet_param_attribute(&self) -> Option<String> {
         let mut attr: String = self.iter().map(|item| item.to_string()).join(";");
         if !attr.is_empty() {
             attr.push(';');
         }
-        attr
+        Some(attr)
     }
 }
 
 impl ToSheetParamAttribute for String {
-    fn to_sheet_param_attribute(&self) -> String {
-        self.clone()
+    fn to_sheet_param_attribute(&self) -> Option<String> {
+        Some(self.clone())
     }
 }
 
 impl ToSheetParamAttribute for bool {
-    fn to_sheet_param_attribute(&self) -> String {
-        self.to_string()
+    fn to_sheet_param_attribute(&self) -> Option<String> {
+        Some(self.to_string())
     }
 }
 
@@ -417,8 +414,8 @@ macro_rules! sheet_number {
         }
 
         impl ToSheetParamAttribute for $target {
-            fn to_sheet_param_attribute(&self) -> String {
-                self.to_string()
+            fn to_sheet_param_attribute(&self) -> Option<String> {
+                Some(self.to_string())
             }
         }
     };

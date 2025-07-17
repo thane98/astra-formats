@@ -134,7 +134,8 @@ fn decode(texture: &Texture2D, image_data: &[u8]) -> Result<DynamicImage> {
         _ => bail!("unsupported texture format '{:?}'", texture.texture_format),
     };
 
-    let block_height_mip0 = tegra_swizzle::block_height_mip0(tegra_swizzle::div_round_up(height, block_height));
+    let block_height_mip0 =
+        tegra_swizzle::block_height_mip0(tegra_swizzle::div_round_up(height, block_height));
 
     let input = tegra_swizzle::swizzle::deswizzle_block_linear(
         tegra_swizzle::div_round_up(width, block_width),

@@ -250,7 +250,7 @@ impl Bundle {
     }
 
     pub fn rename(&mut self, original_file_name: &str, new_file_name: String) -> Result<()> {
-        if let Some(contents) = self.files.remove(original_file_name) {
+        if let Some(contents) = self.files.shift_remove(original_file_name) {
             self.files.insert(new_file_name, contents);
             Ok(())
         } else {
