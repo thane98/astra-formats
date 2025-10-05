@@ -162,11 +162,17 @@ impl BinWrite for AssetFile {
             write_padding(writer, 8)?;
             let offset = writer.stream_position()? - start;
             asset.write_options(writer, endian, ())?;
+            let pre_padding_size = (writer.stream_position()? - start - offset) as u32;
             write_padding(writer, 4)?;
+            let post_padding_size = (writer.stream_position()? - start - offset) as u32;
             objects[*object_index] = AssetFileObject {
                 path_id: 0,
                 offset,
-                size: (writer.stream_position()? - start - offset) as u32,
+                size: if asset.type_hash() == GAME_OBJECT_HASH {
+                    pre_padding_size
+                } else {
+                    post_padding_size
+                },
                 type_id: type_hash_to_id
                     .get(&asset.type_hash())
                     .map(|id| *id as u32)
