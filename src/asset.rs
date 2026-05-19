@@ -31,6 +31,7 @@ pub const TERRAIN_MONO_BEHAVIOR_TYPE_HASH: i128 = 161821592088346330348225465071
 pub const ANIMATION_CLIP_HASH: i128 = -80937412517696055409803870673809846754;
 pub const ANIMATOR_OVERRIDE_CONTROLLER_HASH: i128 = -102229199973352171437435367599983726207;
 pub const ANIMATOR_CONTROLLER_HASH: i128 = -115873685307230980538653717616089922820;
+pub const TEXTMESHPROUGUI_HASH: i128 = 99532410576758133366183399712683919222;
 
 fn write_padding<W: Write + Seek>(writer: &mut W, align: u64) -> BinResult<()> {
     while writer.stream_position()? % align != 0 {
@@ -506,6 +507,7 @@ pub enum Asset {
     AnimationClip(AnimationClip),
     AnimatorOverrideController(AnimatorOverrideController),
     AnimatorController(AnimatorController),
+    TextMeshProUGUI(TextMeshProUGUI),
     Unparsed(Unparsed),
 }
 
@@ -534,6 +536,7 @@ impl Asset {
             Asset::AnimationClip(_) => ANIMATION_CLIP_HASH,
             Asset::AnimatorOverrideController(_) => ANIMATOR_OVERRIDE_CONTROLLER_HASH,
             Asset::AnimatorController(_) => ANIMATOR_CONTROLLER_HASH,
+            Asset::TextMeshProUGUI(_) => TEXTMESHPROUGUI_HASH,
             Asset::Unparsed(blob) => blob.type_hash,
         }
     }
@@ -602,6 +605,15 @@ impl BinRead for Asset {
                     name,
                     blob,
                 }))
+            }
+            TEXTMESHPROUGUI_HASH => {
+                let start = reader.stream_position()?;
+                let mut value = TextMeshProUGUI::read_options(reader, endian, ())?;
+                let consumed = reader.stream_position()? - start;
+                let remaining = size.saturating_sub(consumed as usize);
+                value.tail = vec![0; remaining];
+                reader.read_exact(&mut value.tail)?;
+                Ok(Self::TextMeshProUGUI(value))
             }
             _ => {
                 let mut blob = vec![0; size];
@@ -2143,4 +2155,74 @@ pub struct AnimatorController {
     pub name: UString,
     #[br(ignore)]
     pub blob: Vec<u8>,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct ArgumentCache {
+    pub object_argument: PPtr,
+    pub object_argument_assembly_type_name: UString,
+    pub int_argument: i32,
+    pub float_argument: f32,
+    pub string_argument: UString,
+    pub bool_argument: u8,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct PersistentCall {
+    pub target: PPtr,
+    pub target_assembly_type_name: UString,
+    pub method_name: UString,
+    pub mode: i32,
+    pub arguments: ArgumentCache,
+    #[brw(align_before = 4)]
+    pub call_state: i32,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct UnityEvent {
+    pub calls: UArray<PersistentCall>,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct VertexGradient {
+    pub top_left: ColorRGBA,
+    pub top_right: ColorRGBA,
+    pub bottom_left: ColorRGBA,
+    pub bottom_right: ColorRGBA,
+}
+
+#[binrw]
+#[derive(Debug)]
+pub struct TextMeshProUGUI {
+    pub game_object: PPtr,
+    pub enabled: u8,
+    pub script: PPtr,
+    pub name: UString,
+    pub material: PPtr,
+    pub color: ColorRGBA,
+    pub raycast_target: u8,
+    pub raycast_padding: Vector4f,
+    pub maskable: u8,
+    pub on_cull_state_changed: UnityEvent,
+    pub text: UString,
+    pub is_right_to_left: u8,
+    pub font_asset: PPtr,
+    pub shared_material: PPtr,
+    pub font_shared_materials: UArray<PPtr>,
+    pub font_material: PPtr,
+    pub font_materials: UArray<PPtr>,
+    pub font_color32: u32,
+    pub font_color: ColorRGBA,
+    pub enable_vertex_gradient: u8,
+    #[brw(align_before = 4)]
+    pub color_mode: i32,
+    pub font_color_gradient: VertexGradient,
+    pub font_color_gradient_preset: PPtr,
+    pub sprite_asset: PPtr,
+    #[br(ignore)]
+    pub tail: Vec<u8>,
 }
