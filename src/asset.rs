@@ -2112,6 +2112,7 @@ pub struct GenericBinding {
     pub type_id: u32,
     pub custom_type: u8,
     pub is_pptr_curve: u8,
+    #[brw(align_after = 4)]
     pub is_int_curve: u8,
 }
 
